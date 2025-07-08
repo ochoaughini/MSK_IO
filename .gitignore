@@ -4,6 +4,7 @@ __pycache__/
 # virtualenvs and environments
 venv/
 .venv/
+.venv/bin/activate*
 .env
 .env.*
 
@@ -31,7 +32,9 @@ docs/_build/
 
 # IDEs
 .vscode/
+.vscode/**
 .idea/
+.idea/**
 .ropeproject/
 
 # generated data
@@ -67,6 +70,8 @@ tmp_nifti/
 # notebook and coverage artifacts
 .ipynb_checkpoints/
 coverage.xml
+jupyter_runtime/
+**/jupyter-runtime/
 
 # compiled extensions
 *.so

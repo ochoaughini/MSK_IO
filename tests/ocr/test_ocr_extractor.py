@@ -17,3 +17,11 @@ def test_ocr_extractor(tmp_path: Path) -> None:
     extractor = OCRExtractor()
     text = extractor.extract(img_path)
     assert "shoulder" in text
+
+
+def test_ocr_batch(tmp_path: Path) -> None:
+    img1 = _create_img(tmp_path / "s1.png")
+    img2 = _create_img(tmp_path / "s2.png")
+    extractor = OCRExtractor()
+    results = extractor.extract_batch([img1, img2])
+    assert len(results) == 2

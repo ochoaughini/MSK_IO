@@ -13,7 +13,9 @@ repos:
           - flake8-comprehensions
           - flake8-bandit
           - flake8-docstrings
-        args: [--max-complexity=10]
+        args:
+          - --max-complexity=10
+          - --select=C90,E,F,W,B,B950,D
         stages: [commit]
   - repo: https://github.com/pycqa/isort
     rev: 5.12.0

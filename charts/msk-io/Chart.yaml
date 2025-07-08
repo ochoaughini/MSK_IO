@@ -1,0 +1,3 @@
+apiVersion: v2
+name: msk-io
+version: 0.1.0

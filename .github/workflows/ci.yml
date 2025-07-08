@@ -3,24 +3,50 @@ on: [push, pull_request]
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
+        os: [ubuntu-latest, macos-latest]
         python-version: ["3.11", "3.12"]
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements-lock.txt') }}
       - name: Install dependencies
         run: |
-          pip install .[dev]
+          pip install -r requirements-lock.txt
           pre-commit install
       - name: Run pre-commit
         run: pre-commit run --files $(git ls-files -m)
-      - name: Run tests
-        run: pytest -q
-      - name: Build Docker image
+      - name: Run tests with coverage
+        run: |
+          coverage run --source=msk_io -m pytest -q
+          coverage xml
+          coverage report --fail-under=90
+      - uses: codecov/codecov-action@v3
+        with:
+          files: coverage.xml
+
+  docker:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build image
         run: docker build -t msk-io:${{ github.sha }} .
-      - name: Helm preview
-        run: echo "Deploy Helm chart preview"
+      - name: Push image
+        run: echo "docker push"
+
+  helm:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Lint chart
+        run: helm lint charts/msk-io

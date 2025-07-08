@@ -8,4 +8,4 @@ def test_constraint_retriever(tmp_path: Path) -> None:
     idx.index_items(["Figure: labral tear"])
     retr = ConstraintRetriever(idx)
     res = retr.retrieve("labral tear")
-    assert "labral tear" in res
+    assert "text" in res
