@@ -14,6 +14,13 @@ from .preprocessing.png_exporter import PNGExporter
 from .image_processing.segmentor import Segmentor
 from .image_processing.constraint_mapper import ConstraintMapper
 from .symbolic.symbolic_state_emitter import SymbolicStateEmitter, SymbolicState
+from .inference.llm_agents import (
+    BaseAgent,
+    MiniGPTAgent,
+    GEMAAgent,
+    PHI2Agent,
+    analyze_with_agents,
+)
 from .inference.constraint_lattice import ConstraintLattice
 from .control.multi_agent_harmonizer import MultiAgentHarmonizer, AgentOutput
 from .storage.memory_vault import MemoryVault
@@ -67,6 +74,7 @@ class PipelineRunner:
         ocr: Optional[OCRExtractor] = None,
         indexer: Optional[SemanticIndexer] = None,
         retriever: Optional[ConstraintRetriever] = None,
+        agents: Optional[Iterable[BaseAgent]] = None,
     ) -> None:
         self.loader = loader or DICOMLoader()
         self.converter = converter or NiftiConverter()
@@ -81,6 +89,14 @@ class PipelineRunner:
         self.ocr = ocr or OCRExtractor()
         self.indexer = indexer or SemanticIndexer(Path("index"))
         self.retriever = retriever or ConstraintRetriever(self.indexer)
+        if agents is None:
+            self.agents = [
+                MiniGPTAgent(weight=1 / 3),
+                GEMAAgent(weight=1 / 3),
+                PHI2Agent(weight=1 / 3),
+            ]
+        else:
+            self.agents = list(agents)
 
     def run(self, settings: PipelineSettings, vault: MemoryVault) -> PipelineResult:
         """Run the pipeline synchronously."""
@@ -121,10 +137,11 @@ class PipelineRunner:
 
         @instrument_stage("emit")
         @map_exceptions(EmissionError("", stage="emission"))
-        def _emit() -> SymbolicState:
-            return self.emitter.emit_state(np.array([0.5]), np.array([0.5]))
+        def _emit() -> list[AgentOutput]:
+            return analyze_with_agents(volume, self.agents)
 
-        state = _emit()
+        outputs = _emit()
+        states = [o.state for o in outputs]
 
         @instrument_stage("validate")
         @map_exceptions(ConstraintValidationError("", stage="validation"))
@@ -134,16 +151,14 @@ class PipelineRunner:
                 if settings.lattice
                 else None
             )
-            return lattice.validate_chain([state]) if lattice else True
+            return lattice.validate_chain(states) if lattice else True
 
         valid = _validate()
 
         @instrument_stage("harmonize")
         @map_exceptions(HarmonizationError("", stage="harmonization"))
         def _harmonize() -> SymbolicState:
-            return self.harmonizer.harmonize(
-                [AgentOutput(state=state, weight=1.0, agent_id="default")]
-            )
+            return self.harmonizer.harmonize(outputs)
 
         final_state = _harmonize()
 

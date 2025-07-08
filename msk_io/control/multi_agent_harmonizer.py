@@ -69,9 +69,6 @@ class MultiAgentHarmonizer:
     def harmonize(self, outputs: List[AgentOutput]) -> SymbolicState:
         if not outputs:
             raise ValueError("No agent outputs provided")
-        total_weight = sum(o.weight for o in outputs)
-        if not 0 < total_weight <= 1:
-            raise ValueError("Sum of weights must be within (0,1]")
         scores = self.policy.score(outputs)
         if np.all(scores == 0):
             return outputs[0].state
