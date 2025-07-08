@@ -1,16 +1,39 @@
-import argparse
 from pathlib import Path
+import typer
+from rich.console import Console
 from .api import run_pipeline
+from .config import PipelineConfig
+
+app = typer.Typer(add_completion=False)
+console = Console()
 
 
-def main():
-    parser = argparse.ArgumentParser(description='Run MSK_IO pipeline')
-    parser.add_argument('dicom_dir', type=Path)
-    parser.add_argument('config', type=Path)
-    parser.add_argument('vault', type=Path)
-    args = parser.parse_args()
-    result = run_pipeline(args.dicom_dir, args.config, args.vault)
-    print(result)
+@app.command()
+def run(
+    dicom_dir: Path,
+    config: Path,
+    vault: Path,
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+    dry_run: bool = typer.Option(False, "--dry-run"),
+):
+    """Execute full pipeline."""
+    conf = PipelineConfig(rules_path=config, verbose=verbose)
+    if dry_run:
+        console.print(f"[yellow]Dry run with config: {conf}")
+        raise typer.Exit()
+    result = run_pipeline(dicom_dir, conf, vault)
+    console.print(result)
 
-if __name__ == '__main__':
-    main()
+
+@app.command()
+def load(dicom_dir: Path):
+    console.print(f"Loading {dicom_dir}")
+
+
+@app.command()
+def segment(dicom_dir: Path):
+    console.print(f"Segmenting {dicom_dir}")
+
+
+if __name__ == "__main__":
+    app()
