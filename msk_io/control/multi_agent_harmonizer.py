@@ -1,8 +1,9 @@
 from dataclasses import dataclass
-from typing import List, Protocol, Dict, Type
+from typing import List
 import numpy as np
 from datetime import datetime
 from ..symbolic.symbolic_state_emitter import SymbolicState
+from .policy_registry import POLICIES, ScoringPolicy, register_policy
 
 
 @dataclass
@@ -15,23 +16,11 @@ class AgentOutput:
     metadata: dict | None = None
 
 
-class ScoringPolicy(Protocol):
-    def score(self, outputs: List[AgentOutput]) -> np.ndarray: ...
-
-
-POLICIES: Dict[str, Type[ScoringPolicy]] = {}
-
-
-def register_policy(name: str):
-    def _decorator(cls: Type[ScoringPolicy]) -> Type[ScoringPolicy]:
-        POLICIES[name] = cls
-        return cls
-
-    return _decorator
 
 
 @register_policy("weighted")
 class WeightedSumPolicy:
+    """Weight confidences by provided agent weights."""
     def score(self, outputs: List[AgentOutput]) -> np.ndarray:
         weights = np.array([o.weight for o in outputs], dtype=float)
         weights = weights / weights.sum() if weights.sum() else weights
@@ -41,6 +30,7 @@ class WeightedSumPolicy:
 
 @register_policy("softmax")
 class SoftmaxPolicy:
+    """Apply softmax to agent confidences."""
     def score(self, outputs: List[AgentOutput]) -> np.ndarray:
         conf = np.array([o.state.confidence for o in outputs], dtype=float)
         e = np.exp(conf)
@@ -49,6 +39,7 @@ class SoftmaxPolicy:
 
 @register_policy("bayesian")
 class BayesianFusionPolicy:
+    """Normalize confidences as Bayesian fusion."""
     def score(self, outputs: List[AgentOutput]) -> np.ndarray:
         conf = np.array([o.state.confidence for o in outputs], dtype=float)
         return conf / conf.sum() if conf.sum() else conf
@@ -56,6 +47,7 @@ class BayesianFusionPolicy:
 
 @register_policy("consensus")
 class ConsensusVotingPolicy:
+    """Vote for the most common predicate set."""
     def score(self, outputs: List[AgentOutput]) -> np.ndarray:
         preds = [tuple(o.state.predicates) for o in outputs]
         most_common = max(set(preds), key=preds.count)
@@ -77,6 +69,9 @@ class MultiAgentHarmonizer:
     def harmonize(self, outputs: List[AgentOutput]) -> SymbolicState:
         if not outputs:
             raise ValueError("No agent outputs provided")
+        total_weight = sum(o.weight for o in outputs)
+        if not 0 < total_weight <= 1:
+            raise ValueError("Sum of weights must be within (0,1]")
         scores = self.policy.score(outputs)
         if np.all(scores == 0):
             return outputs[0].state

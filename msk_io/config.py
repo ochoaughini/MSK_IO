@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import os
-from threading import Thread
-from typing import Callable, List, Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -12,6 +11,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class LoaderConfig(BaseModel):
     cache_lmdb: Optional[Path] = None
     interpolate_missing: bool = False
+
+    @field_validator("cache_lmdb")
+    @classmethod
+    def validate_cache(cls, v: Optional[Path]) -> Optional[Path]:
+        if v and v.exists() and not v.is_dir():
+            raise ValueError("cache_lmdb must be a directory")
+        return v
 
 
 class ConverterConfig(BaseModel):
@@ -22,6 +28,13 @@ class ConverterConfig(BaseModel):
 class SegmentorConfig(BaseModel):
     threshold: float = Field(0.5, ge=0.0, le=1.0)
     model_path: Optional[Path] = None
+
+    @field_validator("model_path")
+    @classmethod
+    def validate_model(cls, v: Optional[Path]) -> Optional[Path]:
+        if v and not v.exists():
+            raise FileNotFoundError(v)
+        return v
 
 
 class MapperConfig(BaseModel):
@@ -50,6 +63,13 @@ class HarmonizerConfig(BaseModel):
 class VaultConfig(BaseModel):
     path: Path = Path("vault.db")
 
+    @field_validator("path")
+    @classmethod
+    def validate_path(cls, v: Path) -> Path:
+        if v.exists() and v.is_dir():
+            raise ValueError("vault path must be a file")
+        return v
+
 
 class PipelineSettings(BaseSettings):
     loader: LoaderConfig = LoaderConfig()
@@ -72,6 +92,13 @@ class PipelineSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="MSK_", extra="ignore")
 
+    @field_validator("data_path")
+    @classmethod
+    def validate_data(cls, v: Path) -> Path:
+        if not v.exists():
+            raise FileNotFoundError(v)
+        return v
+
     def __init__(self, **data):
         rules_env = os.getenv("MSK_RULES_PATH")
         if rules_env and "lattice" not in data:
@@ -92,29 +119,3 @@ class PipelineSettings(BaseSettings):
         return self.segmentor.threshold
 
 
-class SettingsWatcher:
-    def __init__(self, path: Path, callback: Callable[[PipelineSettings], None]):
-        self.path = path
-        self.callback = callback
-        self.thread: Optional[Thread] = None
-
-    def start(self) -> Thread:
-        from watchdog.events import FileSystemEventHandler
-        from watchdog.observers import Observer
-
-        class _Handler(FileSystemEventHandler):
-            def on_modified(self, event):  # type: ignore[override]
-                if Path(event.src_path) == self.path:
-                    try:
-                        settings = PipelineSettings.model_validate_json(
-                            self.path.read_text()
-                        )
-                        self.callback(settings)
-                    except ValidationError as exc:  # pragma: no cover
-                        print(f"Config reload failed: {exc}")
-
-        observer = Observer()
-        observer.schedule(_Handler(), self.path.parent, recursive=False)
-        self.thread = Thread(target=observer.start, daemon=True)
-        self.thread.start()
-        return self.thread

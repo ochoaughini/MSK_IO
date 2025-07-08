@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import time
 from pathlib import Path
 from typing import Callable, Iterable, Optional
 
 import numpy as np
-from prometheus_client import Counter, Summary
+from prometheus_client import Counter, Summary, Gauge, Histogram
+from .decorators import instrument_stage, map_exceptions
 
 from .preprocessing.dicom_loader import DICOMLoader
 from .preprocessing.nifti_converter import NiftiConverter
@@ -35,7 +35,16 @@ from .errors import (
 # Basic Prometheus metrics
 LOAD_TIME = Summary("dicom_load_seconds", "Time spent loading DICOM")
 SEG_TIME = Summary("segment_seconds", "Time spent segmenting")
+MAP_TIME = Summary("map_seconds", "Time spent mapping")
+EMIT_TIME = Summary("emit_seconds", "Time spent emitting")
+VALIDATE_TIME = Summary("validate_seconds", "Time spent validating")
+HARM_TIME = Summary("harmonize_seconds", "Time spent harmonizing")
+VAULT_TIME = Summary("vault_seconds", "Time spent vaulting")
 VOLUME_COUNTER = Counter("volumes_processed_total", "Volumes processed")
+ACTIVE_RUNS = Gauge("active_runs", "Active pipeline runs")
+PREDICATE_HIST = Histogram(
+    "predicates_per_case", "Number of predicates per case", buckets=(1, 2, 5, 10, 20)
+)
 
 
 class PipelineRunner:
@@ -74,62 +83,79 @@ class PipelineRunner:
     def run(self, settings: PipelineSettings, vault: MemoryVault) -> dict:
         """Run the pipeline synchronously."""
         dicom_dir = settings.data_path
-        with LOAD_TIME.time():
-            try:
-                volume = self.loader.load_series(dicom_dir)
-            except Exception as exc:  # pragma: no cover - wrapped
-                raise DICOMLoadError(str(exc), stage="load") from exc
+        ACTIVE_RUNS.inc()
 
-        try:
-            nifti_path = self.converter.to_nifti(volume, dicom_dir / "volume.nii.gz")
-        except Exception as exc:  # pragma: no cover - wrapped
-            raise NiftiConversionError(str(exc), stage="conversion") from exc
+        @instrument_stage("load", LOAD_TIME)
+        @map_exceptions(DICOMLoadError("", stage="load"))
+        def _load() -> np.ndarray:
+            return self.loader.load_series(dicom_dir)
+
+        volume = _load()
+
+        @map_exceptions(NiftiConversionError("", stage="conversion"))
+        def _convert() -> Path:
+            return self.converter.to_nifti(volume, dicom_dir / "volume.nii.gz")
+
+        nifti_path = _convert()
 
         try:
             self.exporter.save_slice(volume, len(volume) // 2, dicom_dir / "slice.png")
         except Exception:  # pragma: no cover - optional
             pass
 
-        with SEG_TIME.time():
-            try:
-                mask = self.segmentor.segment(volume)
-            except Exception as exc:  # pragma: no cover - wrapped
-                raise SegmentationError(str(exc), stage="segmentation") from exc
+        @instrument_stage("segment", SEG_TIME)
+        @map_exceptions(SegmentationError("", stage="segmentation"))
+        def _segment() -> np.ndarray:
+            return self.segmentor.segment(volume)
 
-        try:
-            predicates = self.mapper.map(mask)
-        except Exception as exc:  # pragma: no cover - wrapped
-            raise MappingError(str(exc), stage="mapping") from exc
+        mask = _segment()
 
-        try:
-            state = self.emitter.emit_state(np.array([0.5]), np.array([0.5]))
-        except Exception as exc:  # pragma: no cover - wrapped
-            raise EmissionError(str(exc), stage="emission") from exc
+        @instrument_stage("map", MAP_TIME)
+        @map_exceptions(MappingError("", stage="mapping"))
+        def _map() -> Iterable[str]:
+            return self.mapper.map(mask)
 
-        try:
+        predicates = _map()
+
+        @instrument_stage("emit", EMIT_TIME)
+        @map_exceptions(EmissionError("", stage="emission"))
+        def _emit() -> SymbolicState:
+            return self.emitter.emit_state(np.array([0.5]), np.array([0.5]))
+
+        state = _emit()
+
+        @instrument_stage("validate", VALIDATE_TIME)
+        @map_exceptions(ConstraintValidationError("", stage="validation"))
+        def _validate() -> bool:
             lattice = (
                 self.lattice or ConstraintLattice(settings.lattice.rules_path)
                 if settings.lattice
                 else None
             )
-            valid = lattice.validate_chain([state]) if lattice else True
-        except Exception as exc:  # pragma: no cover - wrapped
-            raise ConstraintValidationError(str(exc), stage="validation") from exc
+            return lattice.validate_chain([state]) if lattice else True
 
-        try:
-            final_state = self.harmonizer.harmonize(
+        valid = _validate()
+
+        @instrument_stage("harmonize", HARM_TIME)
+        @map_exceptions(HarmonizationError("", stage="harmonization"))
+        def _harmonize() -> SymbolicState:
+            return self.harmonizer.harmonize(
                 [AgentOutput(state=state, weight=1.0, agent_id="default")]
             )
-        except Exception as exc:  # pragma: no cover - wrapped
-            raise HarmonizationError(str(exc), stage="harmonization") from exc
 
-        try:
-            vault = self.vault or vault
-            h = vault.checkpoint(final_state)
-        except Exception as exc:  # pragma: no cover - wrapped
-            raise VaultError(str(exc), stage="vault") from exc
+        final_state = _harmonize()
+
+        @instrument_stage("vault", VAULT_TIME)
+        @map_exceptions(VaultError("", stage="vault"))
+        def _vault() -> str:
+            local_vault = self.vault or vault
+            return local_vault.checkpoint(final_state)
+
+        h = _vault()
 
         VOLUME_COUNTER.inc()
+        ACTIVE_RUNS.dec()
+        PREDICATE_HIST.observe(len(list(predicates)))
         return {
             "nifti": str(nifti_path),
             "valid": valid,

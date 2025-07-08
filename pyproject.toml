@@ -16,6 +16,7 @@ dependencies = [
     "pydicom",
     "nibabel",
     "Pillow",
+    "lmdb",
     "typer",
     "pdfminer.six",
     "pytesseract",
