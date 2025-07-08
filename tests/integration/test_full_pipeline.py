@@ -32,3 +32,4 @@ def test_full_pipeline(tmp_path: Path):
     assert isinstance(result, PipelineResult)
     assert Path(result.nifti).exists()
     assert result.valid is True
+    assert isinstance(result.entities, list)

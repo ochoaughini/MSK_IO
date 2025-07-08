@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Iterable, Optional
+from typing import Callable, Iterable, Optional, List
 
 import numpy as np
 from prometheus_client import Counter, Gauge, Histogram
@@ -13,6 +13,7 @@ from .preprocessing.nifti_converter import NiftiConverter
 from .preprocessing.png_exporter import PNGExporter
 from .image_processing.segmentor import Segmentor
 from .image_processing.constraint_mapper import ConstraintMapper
+from .symbolic.def_entities import DiagnosticEntity
 from .symbolic.symbolic_state_emitter import SymbolicStateEmitter, SymbolicState
 from .inference.llm_agents import (
     BaseAgent,
@@ -54,6 +55,7 @@ class PipelineResult:
     valid: bool
     hash: str
     predicates: Iterable[str]
+    entities: List[DiagnosticEntity] = field(default_factory=list)
 
 
 class PipelineRunner:
@@ -134,6 +136,7 @@ class PipelineRunner:
             return self.mapper.map(mask)
 
         predicates = _map()
+        entities = self.mapper.map_entities(mask)
 
         @instrument_stage("emit")
         @map_exceptions(EmissionError("", stage="emission"))
@@ -174,7 +177,11 @@ class PipelineRunner:
         ACTIVE_RUNS.dec()
         PREDICATE_HIST.observe(len(list(predicates)))
         return PipelineResult(
-            nifti=str(nifti_path), valid=valid, hash=h, predicates=predicates
+            nifti=str(nifti_path),
+            valid=valid,
+            hash=h,
+            predicates=predicates,
+            entities=entities,
         )
 
     async def run_async(

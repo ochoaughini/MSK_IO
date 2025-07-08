@@ -1,6 +1,9 @@
 from dataclasses import dataclass
-from typing import Dict
+from typing import Dict, List
+
 import numpy as np
+
+from ..symbolic.def_entities import DiagnosticEntity
 
 @dataclass
 class Predicate:
@@ -18,3 +21,11 @@ class ConstraintMapper:
         for label, name in self.mapping.items():
             result[name] = int((mask == label).sum())
         return result
+
+    def map_entities(self, mask: np.ndarray) -> List[DiagnosticEntity]:
+        """Return a list of ``DiagnosticEntity`` objects for each label."""
+        entities: List[DiagnosticEntity] = []
+        for label, name in self.mapping.items():
+            volume = int((mask == label).sum())
+            entities.append(DiagnosticEntity(name=name, volume=volume))
+        return entities
