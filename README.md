@@ -1,38 +1,35 @@
 ```mermaid
 graph TD
     subgraph Preprocessing
-        A[DICOM Loader] --> B[dicom2nifti / SimpleITK]
+        A[DICOM Loader] --> B[dicom2nifti or SimpleITK]
         B --> C[PNG Conversion]
-        C --> D[OCR Engine (Tesseract/EasyOCR)]
-        D --> E[PDF Text Extractor (pdf2image + PyMuPDF)]
+        C --> D[OCR Engine]
+        D --> E[PDF Text Extractor]
     end
 
-    subgraph Image Processing
+    subgraph ImageProcessing
         F[TotalSegmentator] --> G[Segmentation Masks]
-        G --> H[Anatomical Constraint Mapper]
+        G --> H[Constraint Mapper]
     end
 
-    subgraph NLP & Symbolic Analysis
-        E --> I[scispaCy / medspaCy]
-        I --> J[Named Entity Recognition]
-        J --> K[SymbolicStateEmitter]
+    subgraph NLP_and_Symbolic
+        E --> I[Biomedical NLP]
+        I --> J[NER + Parsing]
+        J --> K[State Emitter]
         H --> K
-        K --> L[SymbioticAffinityGraph]
+        K --> L[Affinity Graph]
     end
 
-    subgraph Inference Engine
-        L --> M[Constraint Lattice Core]
-        M --> N[WildCore Security Layer]
-        N --> O[Phi-2 or Gemma-2B via Ollama / transformers]
-        O --> P[Symbolic Reasoning Output]
+    subgraph Inference
+        L --> M[Constraint Lattice]
+        M --> N[WildCore Security]
+        N --> O[Phi-2 or Gemma-2B]
+        O --> P[Symbolic Output]
     end
 
-    subgraph Control & Evaluation
-        P --> Q[State Vector + EmancipationMetric]
-        Q --> R[Audit Logger / Memory Tracker]
-        R --> S[Result Validator (Human-in-the-Loop)]
+    subgraph ControlEvaluation
+        P --> Q[State Vector & Metrics]
+        Q --> R[Audit Logger]
+        R --> S[Human-in-the-Loop]
     end
-
-    style A fill:#f9f,stroke:#333,stroke-width:1px
-    style O fill:#bbf,stroke:#000,stroke-width:1px
 ```
