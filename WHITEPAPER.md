@@ -1,20 +1,28 @@
 # Offline Multimodal Diagnostic Pipeline
 
-This whitepaper outlines a symbolic-constrained diagnostic system designed for clinical compliance and secure offline inference. Module names are capitalized and set in monospace for clarity.
+This canonical whitepaper standardizes module naming across the symbolic offline diagnostic system. Components such as `SymbolicStateEmitter`, `SymbioticAffinityGraph`, and `RecursiveInvarianceMonitor` are capitalized and presented in monospace for clarity and interoperability.
 
 ## Pipeline Overview
 
-1. `DICOMLoader` ingests imaging studies and passes data to `Dicom2Nifti` or `SimpleITK` for conversion.
-2. Converted images are transformed to PNG format for downstream processing.
-3. `OCREngine` extracts embedded text while `PDFTextExtractor` gathers any associated reports.
-4. `TotalSegmentator` generates `SegmentationMasks` that feed into the `ConstraintMapper`.
-5. Text output flows through `BiomedicalNLP`, followed by `NERParser`. Results merge with segmentation data in the `SymbolicStateEmitter` and form edges in the `SymbioticAffinityGraph`.
-6. Inference operates on a `ConstraintLattice`, ensuring only valid transitions propagate to the `WildCoreSecurity` layer, which then invokes `Phi-2` or `Gemma-2B` for final reasoning.
-7. `StateVector` metrics are recorded by `AuditLogger` before `HumanInTheLoop` review.
+1. `DICOMLoader` ingests imaging studies, forwarding them to `Dicom2Nifti` or `SimpleITK` for conversion.
+2. Converted images are transformed into PNG format for downstream processing.
+3. `OCREngine` extracts embedded text while `PDFTextExtractor` gathers associated reports.
+4. `TotalSegmentator` produces `SegmentationMasks` that flow into the `ConstraintMapper`.
+5. Results from `BiomedicalNLP` and `NERParser` merge with segmentation outputs in the `SymbolicStateEmitter`, forming edges in the `SymbioticAffinityGraph`.
+6. Inference proceeds over a `ConstraintLattice`, applying `WildCoreSecurity` before invoking `Phi-2` or `Gemma-2B` for final reasoning.
+7. `RecursiveInvarianceMonitor` verifies state stability and `AuditLogger` records `StateVector` metrics prior to `HumanInTheLoop` review.
 
 ## Temporal Inference Cycle
 
-State transitions occur from symbolic vector at $t$ to vector at $t+1$. Convergence is achieved when the norm of the delta vector $\|v_{t+1}-v_t\|$ falls below a predefined threshold $\epsilon$ or when entropy deltas stabilize.
+At each iteration, the symbolic state vector updates according to
+$$
+v_{t+1} = f(v_t, c_t),
+$$
+where $c_t$ represents the constraints applied at step $t$. Convergence occurs when
+$$
+\|v_{t+1} - v_t\| < \epsilon \quad \text{or} \quad \Delta H < \gamma,
+$$
+with $\epsilon$ defining a norm threshold and $\gamma$ an entropy delta bound.
 
 ## Constraint Lattice
 
@@ -26,27 +34,27 @@ where $\mathcal{N}$ represents node predicates (diagnostic facts), $\preceq$ enc
 
 ## Policy Arbitration
 
-The `MultiAgentHarmonizer` selects agent output using trust-weighted softmax:
+The `MultiAgentHarmonizer` selects agent output using a trust-weighted softmax:
 $$
- y = \arg\max_i (w_i \cdot S_i),
+y = \arg\max_i \left( w_i \cdot S_i \right),
 $$
-where $w_i$ is each agent's trust weight and $S_i$ its symbolic coherence score.
+where $w_i$ denotes each agent's trust score and $S_i$ its symbolic coherence.
 
 ## Memory and Audit Hashing
 
-Each symbolic state $S_n$ is hashed for auditability:
+Each symbolic state $S_n$ is hashed to create a verifiable chain:
 $$
- H_n = \text{SHA256}(S_n || H_{n-1}).
+H_n = \text{SHA256}(S_n || H_{n-1}),
 $$
-This chain ensures tamper-proof logging across inference steps.
+providing tamper-proof longitudinal logs across inference steps.
 
 ## BioCLIP Consistency
 
-Text and image embeddings must satisfy cosine similarity
+Text and image embeddings must satisfy
 $$
- \cos(\theta) = \frac{v_t \cdot v_i}{\|v_t\|\,\|v_i\|},
+\cos(\theta) = \frac{v_t \cdot v_i}{\|v_t\|\,\|v_i\|},
 $$
-where $v_t$ is the textual embedding and $v_i$ is the image embedding. Thresholds are tuned for clinical reliability.
+where $v_t$ denotes the textual embedding and $v_i$ the image embedding. Thresholds ensure clinically reliable cross-modal pairing.
 
 ## Conclusion
 
