@@ -1,16 +1,26 @@
 __pycache__/
+**/__pycache__/
 *.pyc
-# virtualenvs
+# virtualenvs and environments
 venv/
+.venv/
 .env
+.env.*
 
 # py test caches
 .pytest_cache/
 .mypy_cache/
 
+# generic cache
+.cache/
+
 # coverage files
 .coverage
 htmlcov/
+coverage/
+
+# log files
+*.log
 
 # build artifacts
 build/
@@ -35,6 +45,14 @@ docs/_build/
 *.pth
 weights/
 checkpoints/
+model_cache/
+
+# local credentials
+*.key
+*.pem
+*.crt
+secrets.yml
+secrets.toml
 
 # downloaded resources
 atlas*/
@@ -60,4 +78,5 @@ coverage.xml
 docker-compose.yml
 *.env.docker
 k8s/
+docker/
 

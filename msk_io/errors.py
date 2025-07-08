@@ -1,34 +1,51 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+
+@dataclass
 class PipelineError(Exception):
-    """Base class for pipeline errors."""
+    """Base class for pipeline errors with codes and hints."""
+
+    message: str
+    code: str = "PIPELINE_ERROR"
+    severity: str = "error"
+    hint: str | None = None
+
+    def __str__(self) -> str:  # pragma: no cover - string repr
+        return f"{self.code}: {self.message}" + (
+            f" Hint: {self.hint}" if self.hint else ""
+        )
 
 
 class DICOMLoadError(PipelineError):
-    pass
+    code = "DICOM_LOAD_FAILED"
+    hint = "Check input directory for valid DICOM files."
 
 
 class NiftiConversionError(PipelineError):
-    pass
+    code = "NIFTI_CONVERSION_FAILED"
 
 
 class SegmentationError(PipelineError):
-    pass
+    code = "SEGMENTATION_FAILED"
 
 
 class MappingError(PipelineError):
-    pass
+    code = "MAPPING_FAILED"
 
 
 class EmissionError(PipelineError):
-    pass
+    code = "EMISSION_FAILED"
 
 
 class ConstraintValidationError(PipelineError):
-    pass
+    code = "LATTICE_VALIDATION_FAILED"
 
 
 class HarmonizationError(PipelineError):
-    pass
+    code = "HARMONIZATION_FAILED"
 
 
 class VaultError(PipelineError):
-    pass
+    code = "VAULT_FAILED"
