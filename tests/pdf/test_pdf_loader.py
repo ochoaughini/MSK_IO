@@ -1,7 +1,7 @@
 from pathlib import Path
 from PIL import Image, ImageDraw
 
-from msk_io.pdf.pdf_loader import PDFLoader
+from msk_io.pdf.pdf_loader import PDFLoader, PageItem
 
 
 def _create_pdf(path: Path) -> Path:
@@ -19,3 +19,4 @@ def test_pdf_loader(tmp_path: Path) -> None:
     assert len(pages) == 1
     # text may be empty since PIL embeds image-only PDF
     assert isinstance(pages[0].text, str)
+    assert isinstance(pages[0].images, list)

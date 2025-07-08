@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Optional
 
 import numpy as np
-from prometheus_client import Counter, Summary, Gauge, Histogram
-from .decorators import instrument_stage, map_exceptions
+from prometheus_client import Counter, Gauge, Histogram
 
+from .decorators import instrument_stage, map_exceptions
 from .preprocessing.dicom_loader import DICOMLoader
 from .preprocessing.nifti_converter import NiftiConverter
 from .preprocessing.png_exporter import PNGExporter
@@ -32,19 +33,20 @@ from .errors import (
     VaultError,
 )
 
-# Basic Prometheus metrics
-LOAD_TIME = Summary("dicom_load_seconds", "Time spent loading DICOM")
-SEG_TIME = Summary("segment_seconds", "Time spent segmenting")
-MAP_TIME = Summary("map_seconds", "Time spent mapping")
-EMIT_TIME = Summary("emit_seconds", "Time spent emitting")
-VALIDATE_TIME = Summary("validate_seconds", "Time spent validating")
-HARM_TIME = Summary("harmonize_seconds", "Time spent harmonizing")
-VAULT_TIME = Summary("vault_seconds", "Time spent vaulting")
+# Prometheus metrics
 VOLUME_COUNTER = Counter("volumes_processed_total", "Volumes processed")
 ACTIVE_RUNS = Gauge("active_runs", "Active pipeline runs")
 PREDICATE_HIST = Histogram(
     "predicates_per_case", "Number of predicates per case", buckets=(1, 2, 5, 10, 20)
 )
+
+
+@dataclass
+class PipelineResult:
+    nifti: str
+    valid: bool
+    hash: str
+    predicates: Iterable[str]
 
 
 class PipelineRunner:
@@ -80,12 +82,12 @@ class PipelineRunner:
         self.indexer = indexer or SemanticIndexer(Path("index"))
         self.retriever = retriever or ConstraintRetriever(self.indexer)
 
-    def run(self, settings: PipelineSettings, vault: MemoryVault) -> dict:
+    def run(self, settings: PipelineSettings, vault: MemoryVault) -> PipelineResult:
         """Run the pipeline synchronously."""
         dicom_dir = settings.data_path
         ACTIVE_RUNS.inc()
 
-        @instrument_stage("load", LOAD_TIME)
+        @instrument_stage("load")
         @map_exceptions(DICOMLoadError("", stage="load"))
         def _load() -> np.ndarray:
             return self.loader.load_series(dicom_dir)
@@ -103,28 +105,28 @@ class PipelineRunner:
         except Exception:  # pragma: no cover - optional
             pass
 
-        @instrument_stage("segment", SEG_TIME)
+        @instrument_stage("segment")
         @map_exceptions(SegmentationError("", stage="segmentation"))
         def _segment() -> np.ndarray:
             return self.segmentor.segment(volume)
 
         mask = _segment()
 
-        @instrument_stage("map", MAP_TIME)
+        @instrument_stage("map")
         @map_exceptions(MappingError("", stage="mapping"))
         def _map() -> Iterable[str]:
             return self.mapper.map(mask)
 
         predicates = _map()
 
-        @instrument_stage("emit", EMIT_TIME)
+        @instrument_stage("emit")
         @map_exceptions(EmissionError("", stage="emission"))
         def _emit() -> SymbolicState:
             return self.emitter.emit_state(np.array([0.5]), np.array([0.5]))
 
         state = _emit()
 
-        @instrument_stage("validate", VALIDATE_TIME)
+        @instrument_stage("validate")
         @map_exceptions(ConstraintValidationError("", stage="validation"))
         def _validate() -> bool:
             lattice = (
@@ -136,7 +138,7 @@ class PipelineRunner:
 
         valid = _validate()
 
-        @instrument_stage("harmonize", HARM_TIME)
+        @instrument_stage("harmonize")
         @map_exceptions(HarmonizationError("", stage="harmonization"))
         def _harmonize() -> SymbolicState:
             return self.harmonizer.harmonize(
@@ -145,7 +147,7 @@ class PipelineRunner:
 
         final_state = _harmonize()
 
-        @instrument_stage("vault", VAULT_TIME)
+        @instrument_stage("vault")
         @map_exceptions(VaultError("", stage="vault"))
         def _vault() -> str:
             local_vault = self.vault or vault
@@ -156,26 +158,25 @@ class PipelineRunner:
         VOLUME_COUNTER.inc()
         ACTIVE_RUNS.dec()
         PREDICATE_HIST.observe(len(list(predicates)))
-        return {
-            "nifti": str(nifti_path),
-            "valid": valid,
-            "hash": h,
-            "predicates": predicates,
-        }
+        return PipelineResult(
+            nifti=str(nifti_path), valid=valid, hash=h, predicates=predicates
+        )
 
     async def run_async(
         self,
         settings: PipelineSettings,
         vault: MemoryVault,
-        callback: Optional[Callable[[dict], None]] = None,
-    ) -> dict:
+        callback: Optional[Callable[[PipelineResult], None]] = None,
+    ) -> PipelineResult:
         """Asynchronous wrapper for run."""
-        result = self.run(settings, vault)
+        import asyncio
+
+        result = await asyncio.to_thread(self.run, settings, vault)
         if callback:
             callback(result)
         return result
 
 
-def run_pipeline(settings: PipelineSettings, vault: MemoryVault) -> dict:
+def run_pipeline(settings: PipelineSettings, vault: MemoryVault) -> PipelineResult:
     runner = PipelineRunner()
     return runner.run(settings, vault)
