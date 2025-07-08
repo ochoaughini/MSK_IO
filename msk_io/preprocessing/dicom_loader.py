@@ -15,7 +15,12 @@ class InvalidDICOMError(Exception):
 
 
 class DICOMLoader:
-    """Load a series of DICOM slices into a 3D numpy array."""
+    """Load a series of DICOM slices into a 3D numpy array.
+
+    The loader attempts to verify basic alignment by ensuring that slice
+    orientations are consistent across the series. Any detected mismatch is
+    logged as a warning but does not stop loading.
+    """
 
     def __init__(self, cache_lmdb: Path | None = None) -> None:
         self.cache_lmdb = cache_lmdb
@@ -25,6 +30,30 @@ class DICOMLoader:
             else None
         )
         self.logger = logging.getLogger(__name__)
+
+    def _slice_orientation(self, fp: Path) -> Tuple[float, ...] | None:
+        """Return the ImageOrientationPatient tuple if present."""
+        try:
+            ds = pydicom.dcmread(str(fp), stop_before_pixels=True)
+            iop = ds.get("ImageOrientationPatient")
+            if iop:
+                return tuple(float(x) for x in iop)
+        except Exception:
+            pass
+        return None
+
+    def _check_orientation(self, paths: List[Path]) -> None:
+        """Log a warning if orientations differ significantly."""
+        orientations = [self._slice_orientation(p) for p in paths]
+        valid = [o for o in orientations if o]
+        if len(valid) <= 1:
+            return
+        base = np.array(valid[0])
+        for orient in valid[1:]:
+            diff = np.linalg.norm(np.array(orient) - base)
+            if diff > 1e-3:
+                self.logger.warning("Inconsistent slice orientation detected")
+                break
 
     def _read_file(self, fp: Path) -> Tuple[float, np.ndarray] | None:
         key = str(fp).encode()
@@ -68,6 +97,7 @@ class DICOMLoader:
             spacings = np.diff(sorted(ipps))
             if np.std(spacings) > 1e-3:
                 self.logger.warning("Inconsistent slice spacing detected")
+        self._check_orientation(files)
         volume = np.stack([r[1] for r in results])
         return volume
 
