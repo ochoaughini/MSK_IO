@@ -80,3 +80,13 @@ docker-compose.yml
 k8s/
 docker/
 
+
+# vector store shards
+.faiss/
+.annoy/
+# PDF caches
+pdf_png_cache/
+ocr_cache/
+# CLI logs
+logs/
+vector_store/

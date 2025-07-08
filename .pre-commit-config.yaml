@@ -3,6 +3,7 @@ repos:
     rev: 23.11.0
     hooks:
       - id: black
+        stages: [commit]
   - repo: https://github.com/pycqa/flake8
     rev: 6.1.0
     hooks:
@@ -11,18 +12,39 @@ repos:
           - flake8-bugbear
           - flake8-comprehensions
           - flake8-bandit
+          - flake8-docstrings
         args: [--max-complexity=10]
+        stages: [commit]
+  - repo: https://github.com/pycqa/isort
+    rev: 5.12.0
+    hooks:
+      - id: isort
+        stages: [commit]
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.6.1
     hooks:
       - id: mypy
         additional_dependencies: [types-Pillow, types-pydicom]
         args: [--strict]
+        stages: [commit]
   - repo: https://github.com/pycqa/bandit
     rev: 1.7.5
     hooks:
       - id: bandit
+        stages: [commit]
   - repo: https://github.com/pyupio/safety-db
     rev: master
     hooks:
       - id: safety
+        stages: [commit]
+  - repo: https://github.com/markdownlint/markdownlint
+    rev: v0.11.0
+    hooks:
+      - id: markdownlint
+        stages: [commit]
+  - repo: https://github.com/prettier/prettier
+    rev: 3.0.0
+    hooks:
+      - id: prettier
+        files: '\.(svelte|jsx|tsx)$'
+        stages: [commit]
