@@ -8,6 +8,8 @@ def test_env_loading(tmp_path, monkeypatch):
     cfg.write_text(json.dumps({}))
     monkeypatch.setenv("MSK_RULES_PATH", str(cfg))
     monkeypatch.setenv("MSK_THRESHOLD", "0.7")
-    settings = PipelineSettings()
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    settings = PipelineSettings(data_path=data_dir)
     assert settings.rules_path == cfg
     assert settings.threshold == 0.7
