@@ -2,7 +2,7 @@ from pathlib import Path
 import typer
 from rich.console import Console
 from .api import run_pipeline
-from .config import PipelineConfig
+from .config import PipelineSettings
 
 app = typer.Typer(add_completion=False)
 console = Console()
@@ -17,7 +17,7 @@ def run(
     dry_run: bool = typer.Option(False, "--dry-run"),
 ):
     """Execute full pipeline."""
-    conf = PipelineConfig(rules_path=config, verbose=verbose)
+    conf = PipelineSettings(rules_path=config, verbose=verbose)
     if dry_run:
         console.print(f"[yellow]Dry run with config: {conf}")
         raise typer.Exit()

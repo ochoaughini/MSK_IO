@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "msk-io"
+dynamic = ["version"]
+description = "Medical imaging toy pipeline"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "MSK", email="noreply@example.com"}]
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "pydantic>=2",
+    "pydicom",
+    "nibabel",
+    "Pillow",
+    "typer",
+]
+
+[project.optional-dependencies]
+gpu = ["cupy"]
+cli = ["rich"]
+dev = ["pytest", "black", "flake8", "mypy"]
+
+[tool.setuptools]
+packages = ["msk_io"]
+
+[tool.setuptools_scm]
+version_scheme = "post-release"
+local_scheme = "no-local-version"
+
