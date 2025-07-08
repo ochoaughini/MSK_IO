@@ -10,6 +10,7 @@ from .symbolic.symbolic_state_emitter import SymbolicStateEmitter, SymbolicState
 from .inference.constraint_lattice import ConstraintLattice
 from .control.multi_agent_harmonizer import MultiAgentHarmonizer, AgentOutput
 from .storage.memory_vault import MemoryVault
+from .config import PipelineSettings
 from .errors import (
     DICOMLoadError,
     NiftiConversionError,
@@ -45,7 +46,7 @@ class PipelineRunner:
         self.harmonizer = harmonizer or MultiAgentHarmonizer()
         self.vault = vault
 
-    def run(self, dicom_dir: Path, config_path: Path, vault_path: Path) -> dict:
+    def run(self, dicom_dir: Path, config: PipelineSettings, vault_path: Path) -> dict:
         try:
             volume = self.loader.load_series(dicom_dir)
         except Exception as exc:
@@ -77,7 +78,7 @@ class PipelineRunner:
             raise EmissionError(str(exc)) from exc
 
         try:
-            lattice = self.lattice or ConstraintLattice(config_path)
+            lattice = self.lattice or ConstraintLattice(config.rules_path)
             valid = lattice.validate_chain([state])
         except Exception as exc:
             raise ConstraintValidationError(str(exc)) from exc
@@ -102,6 +103,6 @@ class PipelineRunner:
         }
 
 
-def run_pipeline(dicom_dir: Path, config_path: Path, vault_path: Path) -> dict:
+def run_pipeline(dicom_dir: Path, config: PipelineSettings, vault_path: Path) -> dict:
     runner = PipelineRunner()
-    return runner.run(dicom_dir, config_path, vault_path)
+    return runner.run(dicom_dir, config, vault_path)

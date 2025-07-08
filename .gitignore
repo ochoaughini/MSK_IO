@@ -28,4 +28,36 @@ docs/_build/
 *.nii
 *.nii.gz
 *.png
+# model weights and caches
+*.h5
+*.ckpt
+*.pt
+*.pth
+weights/
+checkpoints/
+
+# downloaded resources
+atlas*/
+*.zip
+*.tar.gz
+
+# large imaging data
+dicom_dump/
+*.dcm
+tmp_nifti/
+
+# notebook and coverage artifacts
+.ipynb_checkpoints/
+coverage.xml
+
+# compiled extensions
+*.so
+*.pyd
+*.c
+*.cpp
+
+# container metadata
+docker-compose.yml
+*.env.docker
+k8s/
 
