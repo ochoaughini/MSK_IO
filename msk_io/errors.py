@@ -11,6 +11,7 @@ class PipelineError(Exception):
     code: str = "PIPELINE_ERROR"
     severity: str = "error"
     hint: str | None = None
+    stage: str | None = None
 
     def __str__(self) -> str:  # pragma: no cover - string repr
         return f"{self.code}: {self.message}" + (

@@ -1,0 +1,19 @@
+name: CI
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          pip install .[dev]
+          pre-commit install
+      - name: Run pre-commit
+        run: pre-commit run --files $(git ls-files -m)
+      - name: Run tests
+        run: pytest -q

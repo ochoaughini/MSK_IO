@@ -1,31 +1,25 @@
 from __future__ import annotations
 
 from pathlib import Path
-from threading import Thread
-from typing import Callable, Optional, List
 import os
+from threading import Thread
+from typing import Callable, List, Optional
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class LoaderConfig(BaseModel):
-    """Configuration for DICOM loading."""
-
     cache_lmdb: Optional[Path] = None
     interpolate_missing: bool = False
 
 
 class ConverterConfig(BaseModel):
-    """Settings for NIfTI conversion."""
-
     embed_metadata: bool = True
     affine: Optional[List[List[float]]] = None
 
 
 class SegmentorConfig(BaseModel):
-    """Segmentation options."""
-
     threshold: float = Field(0.5, ge=0.0, le=1.0)
     model_path: Optional[Path] = None
 
@@ -39,11 +33,11 @@ class EmitterConfig(BaseModel):
 
 
 class LatticeConfig(BaseModel):
-    rules_path: Path = Field(..., alias="rules_path")
+    rules_path: Path
 
     @field_validator("rules_path")
     @classmethod
-    def check_rules(cls, v: Path) -> Path:
+    def validate_rules_path(cls, v: Path) -> Path:
         if not v.exists():
             raise FileNotFoundError(v)
         return v
@@ -54,12 +48,10 @@ class HarmonizerConfig(BaseModel):
 
 
 class VaultConfig(BaseModel):
-    path: Path
+    path: Path = Path("vault.db")
 
 
-class PipelineConfig(BaseSettings):
-    """Root settings object for the entire pipeline."""
-
+class PipelineSettings(BaseSettings):
     loader: LoaderConfig = LoaderConfig()
     converter: ConverterConfig = ConverterConfig()
     segmentor: SegmentorConfig = SegmentorConfig()
@@ -67,13 +59,18 @@ class PipelineConfig(BaseSettings):
     emitter: EmitterConfig = EmitterConfig()
     lattice: Optional[LatticeConfig] = None
     harmonizer: HarmonizerConfig = HarmonizerConfig()
-    vault: Optional[VaultConfig] = None
+    vault: VaultConfig = VaultConfig()
 
-    verbose: bool = False
-    dry_run: bool = False
-    debug: bool = False
+    data_path: Path = Path("./data")
 
-    model_config = dict(env_prefix="MSK_", extra="ignore", populate_by_name=True)
+    pdf_path: Optional[Path] = None
+    ocr_enabled: bool = False
+    vector_store_path: Path = Path("vector_store")
+    log_level: str = "INFO"
+    metrics_endpoint: Optional[str] = None
+    vector_db_url: Optional[str] = None
+
+    model_config = SettingsConfigDict(env_prefix="MSK_", extra="ignore")
 
     def __init__(self, **data):
         rules_env = os.getenv("MSK_RULES_PATH")
@@ -95,28 +92,29 @@ class PipelineConfig(BaseSettings):
         return self.segmentor.threshold
 
 
-# Backwards compatibility
-PipelineSettings = PipelineConfig
+class SettingsWatcher:
+    def __init__(self, path: Path, callback: Callable[[PipelineSettings], None]):
+        self.path = path
+        self.callback = callback
+        self.thread: Optional[Thread] = None
 
+    def start(self) -> Thread:
+        from watchdog.events import FileSystemEventHandler
+        from watchdog.observers import Observer
 
-def start_settings_watcher(
-    path: Path, callback: Callable[[PipelineConfig], None]
-) -> Thread:
-    """Start a watchdog thread that reloads settings on file changes."""
-    from watchdog.events import FileSystemEventHandler
-    from watchdog.observers import Observer
+        class _Handler(FileSystemEventHandler):
+            def on_modified(self, event):  # type: ignore[override]
+                if Path(event.src_path) == self.path:
+                    try:
+                        settings = PipelineSettings.model_validate_json(
+                            self.path.read_text()
+                        )
+                        self.callback(settings)
+                    except ValidationError as exc:  # pragma: no cover
+                        print(f"Config reload failed: {exc}")
 
-    class _Handler(FileSystemEventHandler):
-        def on_modified(self, event):
-            if Path(event.src_path) == path:
-                try:
-                    settings = PipelineConfig.model_validate_json(path.read_text())
-                    callback(settings)
-                except ValidationError as exc:
-                    print(f"Config reload failed: {exc}")
-
-    observer = Observer()
-    observer.schedule(_Handler(), path.parent, recursive=False)
-    thread = Thread(target=observer.start, daemon=True)
-    thread.start()
-    return thread
+        observer = Observer()
+        observer.schedule(_Handler(), self.path.parent, recursive=False)
+        self.thread = Thread(target=observer.start, daemon=True)
+        self.thread.start()
+        return self.thread

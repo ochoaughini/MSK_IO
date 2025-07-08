@@ -17,17 +17,29 @@ dependencies = [
     "nibabel",
     "Pillow",
     "typer",
+    "pdfminer.six",
+    "pytesseract",
+    "faiss-cpu",
+    "watchdog",
+    "uvicorn[standard]",
 ]
 
 [project.optional-dependencies]
 gpu = ["cupy"]
 cli = ["rich"]
-dev = ["pytest", "black", "flake8", "mypy"]
+dev = [
+    "pytest",
+    "black",
+    "flake8",
+    "mypy",
+    "pre-commit",
+]
+langchain = ["langchain"]
 
 [tool.setuptools]
 packages = ["msk_io"]
 
 [tool.setuptools_scm]
 version_scheme = "post-release"
-local_scheme = "no-local-version"
+local_scheme = "dirty-tag"
 

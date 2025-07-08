@@ -1,5 +1,5 @@
 from typer.testing import CliRunner
-from msk_io.__main__ import app
+from msk_io.main import app
 
 
 def test_cli_help():
