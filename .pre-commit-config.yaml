@@ -10,6 +10,7 @@ repos:
         additional_dependencies:
           - flake8-bugbear
           - flake8-comprehensions
+          - flake8-bandit
         args: [--max-complexity=10]
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.6.1
