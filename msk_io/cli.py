@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import uuid
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Optional
 
@@ -12,9 +14,8 @@ from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app
 from rich.console import Console
 from rich.logging import RichHandler
-from logging.handlers import RotatingFileHandler
 
-from .api import PipelineRunner, PipelineResult
+from .api import PipelineResult, PipelineRunner
 from .config import PipelineSettings
 from .storage.memory_vault import MemoryVault
 
@@ -26,7 +27,8 @@ def create_logger(level: int) -> None:
     logger = logging.getLogger()
     logger.handlers.clear()
     fmt = (
-        '{"time":"%(asctime)s","level":"%(levelname)s","correlation":"%(correlation)s","msg":"%(message)s"}'
+        '{"time":"%(asctime)s","level":"%(levelname)s",'
+        '"correlation":"%(correlation)s","msg":"%(message)s"}'
     )
     correlation = str(uuid.uuid4())[:8]
 
@@ -55,10 +57,22 @@ def _load_settings(path: Optional[Path]) -> PipelineSettings:
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
-    config: Optional[str] = typer.Option(None, "--config", "-c", help="Config file"),
-    pdf: Optional[str] = typer.Option(None, "--pdf", help="PDF to ingest"),
+    config: Optional[str] = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="Config file",
+    ),
+    pdf: Optional[str] = typer.Option(
+        None,
+        "--pdf",
+        help="PDF to ingest",
+    ),
     data_path: Optional[str] = typer.Option(None, "--data-path"),
-    vector_db_url: Optional[str] = typer.Option(None, "--vector-db-url"),
+    vector_db_url: Optional[str] = typer.Option(
+        None,
+        "--vector-db-url",
+    ),
     ocr_enabled: bool = typer.Option(False, "--ocr-enabled", is_flag=True),
     log_level: str = typer.Option("INFO", "--log-level"),
     dry_run: bool = typer.Option(False, "--dry-run"),
@@ -120,6 +134,23 @@ def serve_metrics(host: str = "0.0.0.0", port: int = 8000) -> None:
     import uvicorn
 
     uvicorn.run(make_asgi_app(), host=host, port=port, log_level="info")
+
+
+@app.command()
+def monitor(ctx: typer.Context) -> None:
+    """Start monitoring the desktop MSK folder for new files."""
+    from .watch.directory_monitor import MSKFolderMonitor
+
+    settings: PipelineSettings = ctx.obj
+    create_logger(getattr(logging, settings.log_level.upper(), logging.INFO))
+    monitor = MSKFolderMonitor(vault_path=settings.vault.path)
+    monitor.start()
+    try:
+        asyncio.get_event_loop().run_forever()
+    except KeyboardInterrupt:  # pragma: no cover - manual stop
+        pass
+    finally:
+        monitor.stop()
 
 
 if __name__ == "__main__":  # pragma: no cover
