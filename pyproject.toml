@@ -23,6 +23,10 @@ dependencies = [
     "faiss-cpu",
     "watchdog",
     "uvicorn[standard]",
+    "pydantic-settings",
+    "fastapi",
+    "prometheus-client",
+    "httpx",
 ]
 
 [project.optional-dependencies]
