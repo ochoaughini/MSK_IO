@@ -89,12 +89,15 @@ class PipelineSettings(BaseSettings):
     log_level: str = "INFO"
     metrics_endpoint: Optional[str] = None
     vector_db_url: Optional[str] = None
+    remote_url: Optional[str] = None
+    auth_token: Optional[str] = None
 
     model_config = SettingsConfigDict(env_prefix="MSK_", extra="ignore")
 
     @field_validator("data_path")
     @classmethod
     def validate_data(cls, v: Path) -> Path:
+        # When ``remote_url`` is used the local data path may not exist.
         if not v.exists():
             raise FileNotFoundError(v)
         return v

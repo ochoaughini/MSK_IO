@@ -9,6 +9,7 @@ from prometheus_client import Counter, Gauge, Histogram
 
 from .decorators import instrument_stage, map_exceptions
 from .preprocessing.dicom_loader import DICOMLoader
+from .retrieval.remote_loader import RemoteDICOMLoader
 from .preprocessing.nifti_converter import NiftiConverter
 from .preprocessing.png_exporter import PNGExporter
 from .image_processing.segmentor import Segmentor
@@ -77,6 +78,7 @@ class PipelineRunner:
         indexer: Optional[SemanticIndexer] = None,
         retriever: Optional[ConstraintRetriever] = None,
         agents: Optional[Iterable[BaseAgent]] = None,
+        remote_loader: Optional[RemoteDICOMLoader] = None,
     ) -> None:
         self.loader = loader or DICOMLoader()
         self.converter = converter or NiftiConverter()
@@ -91,6 +93,7 @@ class PipelineRunner:
         self.ocr = ocr or OCRExtractor()
         self.indexer = indexer or SemanticIndexer(Path("index"))
         self.retriever = retriever or ConstraintRetriever(self.indexer)
+        self.remote_loader = remote_loader or RemoteDICOMLoader()
         if agents is None:
             self.agents = [
                 MiniGPTAgent(weight=1 / 3),
@@ -108,6 +111,8 @@ class PipelineRunner:
         @instrument_stage("load")
         @map_exceptions(DICOMLoadError("", stage="load"))
         def _load() -> np.ndarray:
+            if settings.remote_url:
+                return self.remote_loader.load(settings.remote_url, settings.auth_token)
             return self.loader.load_series(dicom_dir)
 
         volume = _load()
