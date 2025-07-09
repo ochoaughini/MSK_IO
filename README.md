@@ -64,3 +64,41 @@ MSK_REMOTE_URL="https://nbia.cancerimagingarchive.net/viewer/?study=..." \
 MSK_AUTH_TOKEN="eyJhbGciOiJI..." \
 python bootstrap_pipeline.py
 ```
+
+## Quickstart
+
+The following steps reproduce the offline pipeline described in the project whitepaper. They assume a Linux environment:
+
+1. Create and activate a virtual environment:
+
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate
+   ```
+
+2. Install dependencies. Prefer the editable install but fall back to the minimal list when the optional extras are unavailable:
+
+   ```bash
+   pip install -e .[dev] || \
+   pip install pydantic-settings prometheus-client httpx fastapi numpy pydicom lmdb pillow nibabel pdfminer.six pyppeteer
+   ```
+
+3. Place a compatible `chromium.tar.xz` inside `resources/chromium/` if the system has no network access. Then bootstrap the browser with:
+
+   ```bash
+   ./bootstrap_chromium.sh  # or `python bootstrap_chromium.py`
+   ```
+
+4. Run the test suite to confirm the environment works:
+
+   ```bash
+   ./run_tests.sh
+   ```
+
+5. Export the remote OHIF url and token and launch the pipeline:
+
+   ```bash
+   export MSK_REMOTE_URL="https://nbia.example/viewer/123"
+   export MSK_AUTH_TOKEN="<jwt-token>"
+   python bootstrap_pipeline.py
+   ```
