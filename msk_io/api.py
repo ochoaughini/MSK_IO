@@ -21,6 +21,7 @@ from .inference.llm_agents import (
     MiniGPTAgent,
     GEMAAgent,
     PHI2Agent,
+    TextAgent,
     analyze_with_agents,
 )
 from .inference.constraint_lattice import ConstraintLattice
@@ -28,6 +29,7 @@ from .control.multi_agent_harmonizer import MultiAgentHarmonizer, AgentOutput
 from .storage.memory_vault import MemoryVault
 from .pdf.pdf_loader import PDFLoader
 from .ocr.ocr_extractor import OCRExtractor
+from .pdf.pdf_ingestor import MSKPDFIngestor
 from .indexer.semantic_indexer import SemanticIndexer
 from .retrieval.constraint_retriever import ConstraintRetriever
 from .config import PipelineSettings
@@ -84,7 +86,7 @@ class PipelineRunner:
         self.converter = converter or NiftiConverter()
         self.exporter = exporter or PNGExporter()
         self.segmentor = segmentor or Segmentor()
-        self.mapper = mapper or ConstraintMapper({1: "region"})
+        self.mapper = mapper or ConstraintMapper({1: "positive", 0: "negative"})
         self.emitter = emitter or SymbolicStateEmitter()
         self.lattice = lattice
         self.harmonizer = harmonizer or MultiAgentHarmonizer()
@@ -107,6 +109,14 @@ class PipelineRunner:
         """Run the pipeline synchronously."""
         dicom_dir = settings.data_path
         ACTIVE_RUNS.inc()
+        texts: List[str] = []
+        if settings.pdf_path and settings.pdf_path.exists():
+            ingestor = MSKPDFIngestor(self.pdf_loader, self.ocr)
+            texts = ingestor.ingest(settings.pdf_path, ocr_enabled=settings.ocr_enabled)
+            if texts:
+                self.indexer.add_items(texts)
+                if self.vault:
+                    self.vault.add_knowledge(texts)
 
         @instrument_stage("load")
         @map_exceptions(DICOMLoadError("", stage="load"))
@@ -146,7 +156,10 @@ class PipelineRunner:
         @instrument_stage("emit")
         @map_exceptions(EmissionError("", stage="emission"))
         def _emit() -> list[AgentOutput]:
-            return analyze_with_agents(volume, self.agents)
+            agents = self.agents
+            if texts:
+                agents = list(self.agents) + [TextAgent(self.indexer, weight=1 / (len(self.agents) + 1))]
+            return analyze_with_agents(volume, agents)
 
         outputs = _emit()
         states = [o.state for o in outputs]

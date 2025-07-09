@@ -12,7 +12,14 @@ class MSKPDFIngestor:
         self.loader = loader or PDFLoader()
         self.ocr = ocr or OCRExtractor()
 
-    def ingest(self, path: Path) -> List[str]:
+    def ingest(self, path: Path, ocr_enabled: bool = False) -> List[str]:
         pages = self.loader.load(path)
-        texts = [p.text for p in pages]
+        texts: List[str] = []
+        for page in pages:
+            text = page.text.strip()
+            if ocr_enabled and (not text or len(text) < 5) and page.images:
+                ocr_texts = [self.ocr.extract_bytes(img.data) for img in page.images]
+                if ocr_texts:
+                    text = " ".join(ocr_texts)
+            texts.append(text)
         return texts
