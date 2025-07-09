@@ -1,6 +1,6 @@
 #!/bin/bash
-# Simple script to run the full test suite with correct PYTHONPATH
-# Usage: ./run_tests.sh
+# Run the full test suite with the proper environment.
+# Usage: ./run_tests.sh [pytest-args]
 
 set -e
 
@@ -8,4 +8,6 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
-PYTHONPATH=$(pwd) pytest -v --tb=short tests/
+pip install -q -e ".[cli,dev]" pydantic-settings prometheus-client >/dev/null
+PYTHONPATH=$(pwd) pytest -v --tb=short tests/ "$@"
+

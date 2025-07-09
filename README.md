@@ -33,3 +33,12 @@ graph TD
         R --> S[Human-in-the-Loop]
     end
 ```
+
+## Testing
+
+Run the full test suite with:
+
+```bash
+./run_tests.sh
+```
+
