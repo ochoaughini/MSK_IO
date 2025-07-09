@@ -42,3 +42,11 @@ a headless browser. ``DICOMStreamSniffer`` monitors network traffic to
 download the original DICOM payloads. ``RemoteDICOMLoader`` combines both
 methods and is triggered when ``remote_url`` and ``auth_token`` are set in
 ``PipelineSettings``.
+
+## Local Chromium Setup
+
+Some utilities rely on a headless Chromium browser. Run `./bootstrap_chromium.sh`
+to ensure a compatible binary is available. The script checks for a system
+installation and unpacks `resources/chromium/chromium.tar.xz` when needed. A
+Python helper (`bootstrap_chromium.py`) provides the same behavior for
+restricted environments.
