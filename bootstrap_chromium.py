@@ -11,6 +11,7 @@ from pathlib import Path
 
 CHROMIUM_CMDS = ["chromium-browser", "chromium", "google-chrome"]
 
+
 def chromium_exists() -> bool:
     for cmd in CHROMIUM_CMDS:
         if shutil.which(cmd):
@@ -29,8 +30,14 @@ def main(res_dir: str) -> None:
     if archive.is_file():
         print(f"Extracting {archive} to {out_dir}")
         out_dir.mkdir(parents=True, exist_ok=True)
-        with tarfile.open(archive) as tf:
-            tf.extractall(out_dir)
+        with tarfile.open(archive, "r:xz") as tf:
+            members = tf.getmembers()
+            root_prefix = Path(members[0].name).parts[0] if members else ""
+            for m in members:
+                parts = Path(m.name).parts
+                if parts[0] == root_prefix:
+                    m.name = Path(*parts[1:]).as_posix()
+            tf.extractall(out_dir, members)
         os.environ["PATH"] = str(out_dir) + os.pathsep + os.environ.get("PATH", "")
         if chromium_exists():
             print("Chromium extracted and available")
@@ -40,6 +47,11 @@ def main(res_dir: str) -> None:
         print(f"Chromium archive {archive} not found", file=sys.stderr)
         sys.exit(1)
 
+
 if __name__ == "__main__":
-    resources = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(__file__), "resources", "chromium")
-    main(resources)
+    resources = (
+        Path(sys.argv[1])
+        if len(sys.argv) > 1
+        else Path(__file__).resolve().parent / "resources" / "chromium"
+    )
+    main(str(resources))
