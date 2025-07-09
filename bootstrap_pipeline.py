@@ -14,7 +14,10 @@ import sys
 from pathlib import Path
 
 CHROMIUM_SCRIPT = Path(__file__).with_name("bootstrap_chromium.sh")
-CHROMIUM_ARCHIVE = Path(__file__).parent / "resources" / "chromium" / "chromium.tar.xz"
+CHROMIUM_ARCHIVE = (
+    Path(__file__).parent / "resources" / "chromium" / "chromium.tar.xz"
+)
+CHROMIUM_BIN_DIR = CHROMIUM_ARCHIVE.parent / "bin"
 CHROMIUM_CMDS = ["chromium-browser", "chromium", "google-chrome"]
 
 
@@ -33,6 +36,9 @@ def ensure_chromium() -> None:
         raise FileNotFoundError(f"{CHROMIUM_ARCHIVE} not found")
     print("Extracting bundled Chromium")
     subprocess.run([str(CHROMIUM_SCRIPT)], check=True)
+    os.environ["PATH"] = str(CHROMIUM_BIN_DIR) + os.pathsep + os.environ.get(
+        "PATH", ""
+    )
     if not chromium_available():
         raise RuntimeError("Chromium extraction failed")
 
@@ -43,7 +49,11 @@ def run_pipeline(remote_url: str, auth_token: str) -> None:
     env["MSK_AUTH_TOKEN"] = auth_token
     Path("logs").mkdir(exist_ok=True)
     Path("data").mkdir(exist_ok=True)
-    subprocess.run([sys.executable, "-m", "msk_io.cli", "run"], check=True, env=env)
+    subprocess.run(
+        [sys.executable, "-m", "msk_io.cli", "run"],
+        check=True,
+        env=env,
+    )
 
 
 def main() -> None:
