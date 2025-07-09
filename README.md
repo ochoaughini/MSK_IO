@@ -50,3 +50,14 @@ to ensure a compatible binary is available. The script checks for a system
 installation and unpacks `resources/chromium/chromium.tar.xz` when needed. A
 Python helper (`bootstrap_chromium.py`) provides the same behavior for
 restricted environments.
+
+## Automated Bootstrap
+
+For air‑gapped execution ``bootstrap_pipeline.py`` orchestrates the entire
+setup. It validates the local Chromium archive, extracts it through
+``bootstrap_chromium.sh`` and runs the pipeline with ``MSK_REMOTE_URL`` and
+``MSK_AUTH_TOKEN`` from the environment:
+
+```bash
+python bootstrap_pipeline.py
+```
