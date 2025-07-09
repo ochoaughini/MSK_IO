@@ -64,3 +64,16 @@ MSK_REMOTE_URL="https://nbia.cancerimagingarchive.net/viewer/?study=..." \
 MSK_AUTH_TOKEN="eyJhbGciOiJI..." \
 python bootstrap_pipeline.py
 ```
+
+### Unified Setup Script
+
+The repository also ships `full_setup.sh` to streamline development. It creates
+a virtual environment, installs all dependencies, validates Chromium and then
+launches the pipeline. After placing `chromium.tar.xz` in
+`resources/chromium/` export the same variables and run:
+
+```bash
+export MSK_REMOTE_URL="https://nbia.cancerimagingarchive.net/viewer/?study=..."
+export MSK_AUTH_TOKEN="eyJhbGciOiJI..."
+bash full_setup.sh
+```
