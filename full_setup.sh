@@ -15,7 +15,12 @@ source "$VENV_DIR/bin/activate"
 
 # --- Install requirements ---
 pip install --upgrade pip
-pip install typer fastapi prometheus_client numpy pydicom lmdb pillow httpx nibabel pdfminer.six pydantic-settings pyppeteer
+if ! pip install -e .[dev]; then
+    pip install pydantic-settings prometheus-client httpx fastapi numpy pydicom lmdb pillow nibabel pdfminer.six pyppeteer
+fi
+
+# --- Run tests ---
+./run_tests.sh
 
 # --- Validate Chromium setup ---
 if ! command -v chromium-browser &> /dev/null && [ ! -f "$CHROMIUM_ARCHIVE" ]; then
