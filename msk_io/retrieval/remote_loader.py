@@ -3,8 +3,11 @@ from __future__ import annotations
 """High level loader that combines canvas capture and network sniffing."""
 
 import asyncio
+import json
 import logging
-from typing import Optional
+import time
+from pathlib import Path
+from typing import Optional, Dict
 
 import numpy as np
 
@@ -20,18 +23,44 @@ class RemoteDICOMLoader:
     def __init__(self, slices: int = 1) -> None:
         self.slices = slices
 
+    def _dump_state(self, method: str, start: float, errors: Dict[str, str]) -> None:
+        data = {
+            "method": method,
+            "start": start,
+            "end": time.time(),
+            "errors": errors,
+        }
+        try:
+            Path("volume_retrieval.json").write_text(json.dumps(data))
+        except Exception:  # pragma: no cover - diagnostics only
+            pass
+
     async def _load_async(self, url: str, token: Optional[str]) -> np.ndarray:
+        errors: Dict[str, str] = {}
+        start = time.time()
+        method = "canvas"
         try:
             canvas = OHIFCanvasExtractor(url, token, slices=self.slices)
             volume = await canvas.retrieve()
             if volume.ndim == 3:
+                self._dump_state(method, start, errors)
                 return volume
+            errors[method] = "unexpected_shape"
             logger.warning("Canvas capture returned unexpected shape")
         except Exception as exc:  # pragma: no cover - best effort
+            errors[method] = str(exc)
             logger.warning("Canvas capture failed: %s", exc)
-        sniffer = DICOMStreamSniffer(url, token)
-        volume = await sniffer.retrieve()
-        return volume
+
+        method = "sniffer"
+        try:
+            sniffer = DICOMStreamSniffer(url, token)
+            volume = await sniffer.retrieve()
+            self._dump_state(method, start, errors)
+            return volume
+        except Exception as exc:
+            errors[method] = str(exc)
+            self._dump_state(method, start, errors)
+            raise
 
     def load(self, url: str, token: Optional[str] = None) -> np.ndarray:
         """Synchronous wrapper for :meth:`_load_async`."""

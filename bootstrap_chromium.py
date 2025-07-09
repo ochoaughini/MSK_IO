@@ -13,7 +13,9 @@ CHROMIUM_CMDS = ["chromium-browser", "chromium", "google-chrome"]
 
 def chromium_exists() -> bool:
     for cmd in CHROMIUM_CMDS:
-        if shutil.which(cmd):
+        path = shutil.which(cmd)
+        if path:
+            os.environ.setdefault("PYPPETEER_EXECUTABLE_PATH", path)
             print(f"Chromium available via {cmd}")
             return True
     return False
@@ -32,7 +34,9 @@ def main(res_dir: str) -> None:
         with tarfile.open(archive) as tf:
             tf.extractall(out_dir)
         os.environ["PATH"] = str(out_dir) + os.pathsep + os.environ.get("PATH", "")
-        if chromium_exists():
+        cand = shutil.which("chromium") or shutil.which("chromium-browser") or shutil.which("google-chrome")
+        if cand:
+            os.environ.setdefault("PYPPETEER_EXECUTABLE_PATH", cand)
             print("Chromium extracted and available")
             return
         print("Extraction finished but chromium command still missing", file=sys.stderr)
