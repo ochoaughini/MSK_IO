@@ -56,8 +56,11 @@ restricted environments.
 For air‑gapped execution ``bootstrap_pipeline.py`` orchestrates the entire
 setup. It validates the local Chromium archive, extracts it through
 ``bootstrap_chromium.sh`` and runs the pipeline with ``MSK_REMOTE_URL`` and
-``MSK_AUTH_TOKEN`` from the environment:
+``MSK_AUTH_TOKEN`` from the environment. Once ``resources/chromium/chromium.tar.xz``
+is present, invoke it as:
 
 ```bash
+MSK_REMOTE_URL="https://nbia.cancerimagingarchive.net/viewer/?study=..." \
+MSK_AUTH_TOKEN="eyJhbGciOiJI..." \
 python bootstrap_pipeline.py
 ```
