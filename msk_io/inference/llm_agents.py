@@ -38,6 +38,26 @@ class GEMAAgent(BaseAgent):
 class PHI2Agent(BaseAgent):
     name = "PHI-2"
 
+
+class TextAgent(BaseAgent):
+    """Simple agent that reasons over indexed text."""
+
+    name = "text"
+
+    def __init__(self, indexer, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.indexer = indexer
+
+    def analyze_volume(self, volume: np.ndarray) -> SymbolicState:
+        text = " ".join(getattr(self.indexer, "items", []))
+        lowered = text.lower()
+        keywords = ["mass", "lesion", "abnormal"]
+        if any(k in lowered for k in keywords):
+            return SymbolicState(["positive"], 0.9)
+        if text:
+            return SymbolicState(["negative"], 0.9)
+        return SymbolicState(["negative"], 0.5)
+
 import asyncio
 from typing import Iterable, List
 from ..control.multi_agent_harmonizer import AgentOutput

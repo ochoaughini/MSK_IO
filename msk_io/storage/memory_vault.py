@@ -13,6 +13,9 @@ class MemoryVault:
         self.conn.execute(
             'CREATE TABLE IF NOT EXISTS states (hash TEXT PRIMARY KEY, data TEXT)'
         )
+        self.conn.execute(
+            'CREATE TABLE IF NOT EXISTS knowledge (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT)'
+        )
 
     def checkpoint(self, state: SymbolicState) -> str:
         h = str(abs(hash(tuple(state.predicates))))
@@ -28,3 +31,8 @@ class MemoryVault:
             raise KeyError(h)
         data = json.loads(row[0])
         return SymbolicState(predicates=data['predicates'], confidence=data['confidence'])
+
+    def add_knowledge(self, texts: list[str]) -> None:
+        for text in texts:
+            self.conn.execute('INSERT INTO knowledge (text) VALUES (?)', (text,))
+        self.conn.commit()
