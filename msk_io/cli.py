@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import uuid
+from dataclasses import asdict
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Optional
@@ -104,7 +105,7 @@ def run(ctx: typer.Context) -> None:
     settings: PipelineSettings = ctx.obj
     vault = MemoryVault(settings.vault.path)
     result = PipelineRunner().run(settings, vault)
-    console.print_json(data=result.__dict__)
+    console.print_json(data=asdict(result))
 
 
 @app.command()
