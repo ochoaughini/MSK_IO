@@ -10,6 +10,7 @@ import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Optional
 
 import typer
 
@@ -46,16 +47,21 @@ app = typer.Typer(add_completion=False)
 
 @app.command()
 def main(
-    url: str,
+    url: Optional[str] = None,
     out: str = "volume.nii.gz",
-    token: str | None = None,
+    token: Optional[str] = None,
     slices: int = 1,
 ) -> None:
     """Fetch ``url`` and save the volume to ``out``."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(message)s")
 
+    if url is None:
+        url = os.environ.get("MSK_REMOTE_URL")
+        if not url:
+            raise typer.BadParameter("URL must be provided via argument or MSK_REMOTE_URL")
+        logging.warning("Using MSK_REMOTE_URL environment variable")
     status = TokenStatus(source="url")
-    if token is None:
+    if token is None and url:
         qs = parse_qs(urlparse(url).query)
         token = qs.get("token", [None])[0]
     if not token:
