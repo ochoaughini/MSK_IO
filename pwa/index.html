@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoicePasskey Mobile</title>
+    <link rel="manifest" href="manifest.json">
+    <script src="app.js" defer></script>
+</head>
+<body>
+    <div id="app">
+        <nav>
+            <button onclick="showScreen('registration')">Registration</button>
+            <button onclick="showScreen('send-sms')">Send via SMS</button>
+            <button onclick="showScreen('verify')">Verify</button>
+        </nav>
+        <div id="screen"></div>
+    </div>
+</body>
+</html>
