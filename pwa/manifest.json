@@ -1,0 +1,9 @@
+{
+    "name": "VoicePasskey Mobile",
+    "short_name": "VoicePasskey",
+    "start_url": "/pwa/index.html",
+    "display": "standalone",
+    "background_color": "#ffffff",
+    "description": "PWA for VoicePasskey",
+    "icons": []
+}

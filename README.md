@@ -102,3 +102,8 @@ The following steps reproduce the offline pipeline described in the project whit
    export MSK_AUTH_TOKEN="<jwt-token>"
    python bootstrap_pipeline.py
    ```
+
+## SMS Token Utilities
+
+The repository includes `sms_module.py` which implements a basic SMS token flow. Use `python sms_module.py send <phone> <token>` to send an encoded token and `python sms_module.py receive <message>` to validate incoming messages.
+
