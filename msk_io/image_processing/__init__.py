@@ -1,7 +1,5 @@
-"""Image processing utilities."""
+"""
+MSK-IO Image Processing Module.
 
-from .segmentor import Segmentor
-from .dl_segmentor import DLSegmentor
-from .constraint_mapper import ConstraintMapper
-
-__all__ = ["Segmentor", "DLSegmentor", "ConstraintMapper"]
+Handles various image manipulation and analysis tasks, including segmentation.
+"""

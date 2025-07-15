@@ -1,52 +1,46 @@
-from __future__ import annotations
+"""Custom exception classes for the MSK-IO application."""
 
-from dataclasses import dataclass
+class MSKIOError(Exception):
+    def __init__(self, message: str = "An MSK-IO error occurred.", code: int = 500) -> None:
+        self.message = message
+        self.code = code
+        super().__init__(self.message)
 
+    def __str__(self) -> str:
+        return f"MSKIOError (Code: {self.code}): {self.message}"
 
-@dataclass
-class PipelineError(Exception):
-    """Base class for pipeline errors with codes and hints."""
+class ConfigurationError(MSKIOError):
+    def __init__(self, message: str = "Configuration error.", code: int = 501) -> None:
+        super().__init__(message, code)
 
-    message: str
-    code: str = "PIPELINE_ERROR"
-    severity: str = "error"
-    hint: str | None = None
-    stage: str | None = None
+class DataValidationError(MSKIOError):
+    def __init__(self, message: str = "Data validation error.", code: int = 502) -> None:
+        super().__init__(message, code)
 
-    def __str__(self) -> str:  # pragma: no cover - string repr
-        return f"{self.code}: {self.message}" + (
-            f" Hint: {self.hint}" if self.hint else ""
-        )
+class ProcessingError(MSKIOError):
+    def __init__(self, message: str = "Data processing error.", code: int = 503) -> None:
+        super().__init__(message, code)
 
+class ImageProcessingError(ProcessingError):
+    def __init__(self, message: str = "Image processing error.", code: int = 504) -> None:
+        super().__init__(message, code)
 
-class DICOMLoadError(PipelineError):
-    code = "DICOM_LOAD_FAILED"
-    hint = "Check input directory for valid DICOM files."
+class LLMInferenceError(ProcessingError):
+    def __init__(self, message: str = "LLM inference error.", code: int = 505) -> None:
+        super().__init__(message, code)
 
+class RetrievalError(MSKIOError):
+    def __init__(self, message: str = "Data retrieval error.", code: int = 506) -> None:
+        super().__init__(message, code)
 
-class NiftiConversionError(PipelineError):
-    code = "NIFTI_CONVERSION_FAILED"
+class IndexingError(MSKIOError):
+    def __init__(self, message: str = "Semantic indexing error.", code: int = 507) -> None:
+        super().__init__(message, code)
 
+class AgentOrchestrationError(MSKIOError):
+    def __init__(self, message: str = "Agent orchestration error.", code: int = 508) -> None:
+        super().__init__(message, code)
 
-class SegmentationError(PipelineError):
-    code = "SEGMENTATION_FAILED"
-
-
-class MappingError(PipelineError):
-    code = "MAPPING_FAILED"
-
-
-class EmissionError(PipelineError):
-    code = "EMISSION_FAILED"
-
-
-class ConstraintValidationError(PipelineError):
-    code = "LATTICE_VALIDATION_FAILED"
-
-
-class HarmonizationError(PipelineError):
-    code = "HARMONIZATION_FAILED"
-
-
-class VaultError(PipelineError):
-    code = "VAULT_FAILED"
+class ExternalServiceError(MSKIOError):
+    def __init__(self, message: str = "External service error.", code: int = 509) -> None:
+        super().__init__(message, code)

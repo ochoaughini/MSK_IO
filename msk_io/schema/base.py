@@ -1,0 +1,74 @@
+from datetime import datetime
+from typing import Dict, Any, List, Literal, Optional
+from uuid import UUID, uuid4
+
+from pydantic import Field
+from msk_io.schema._pydantic_base import MSKIOBaseModel
+
+class Metadata(MSKIOBaseModel):
+    timestamp: datetime = datetime.now()
+    source_system: Optional[str] = None
+    processed_by: str = "MSK-IO Pipeline"
+    pipeline_version: str = "0.0.1"
+
+class TaskStatus(MSKIOBaseModel):
+    task_id: UUID = Field(default_factory=uuid4)
+    task_name: str
+    status: Literal["PENDING", "IN_PROGRESS", "COMPLETED", "FAILED", "SKIPPED"]
+    message: Optional[str] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    duration_seconds: Optional[float] = None
+    error_details: Optional[Dict[str, Any]] = None
+
+    def update_status(self, new_status: Literal["PENDING", "IN_PROGRESS", "COMPLETED", "FAILED", "SKIPPED"], message: Optional[str] = None, error_details: Optional[Dict[str, Any]] = None) -> None:
+        self.status = new_status
+        self.message = message
+        if new_status == "IN_PROGRESS" and self.start_time is None:
+            self.start_time = datetime.now()
+        elif new_status in ["COMPLETED", "FAILED", "SKIPPED"] and self.end_time is None:
+            self.end_time = datetime.now()
+            if self.start_time:
+                self.duration_seconds = (self.end_time - self.start_time).total_seconds()
+        self.error_details = error_details
+
+class ProcessingResult(MSKIOBaseModel):
+    result_id: UUID = Field(default_factory=uuid4)
+    metadata: Metadata = Field(default_factory=Metadata)
+    status: Literal["SUCCESS", "FAILURE", "PARTIAL_SUCCESS"] = "SUCCESS"
+    message: Optional[str] = None
+    errors: List[Dict[str, Any]] = []
+
+class FileInfo(MSKIOBaseModel):
+    file_path: str
+    file_name: str
+    file_extension: str
+    file_size_bytes: Optional[int] = None
+    last_modified: Optional[datetime] = None
+    checksum: Optional[str] = None
+
+class PipelineStatus(MSKIOBaseModel):
+    pipeline_id: UUID = Field(default_factory=uuid4)
+    input_file: Optional[FileInfo] = None
+    overall_status: Literal["PENDING", "RUNNING", "COMPLETED_SUCCESS", "COMPLETED_WITH_ERRORS", "FAILED"]
+    start_time: datetime = datetime.now()
+    end_time: Optional[datetime] = None
+    total_duration_seconds: Optional[float] = None
+    tasks_status: List[TaskStatus] = []
+    final_report_path: Optional[str] = None
+    overall_message: Optional[str] = None
+    fatal_error: Optional[Dict[str, Any]] = None
+
+    def add_task_status(self, task: TaskStatus) -> None:
+        for i, existing in enumerate(self.tasks_status):
+            if existing.task_id == task.task_id:
+                self.tasks_status[i] = task
+                return
+        self.tasks_status.append(task)
+
+    def finalize_pipeline(self, status: Literal["COMPLETED_SUCCESS", "COMPLETED_WITH_ERRORS", "FAILED"], message: Optional[str] = None, fatal_error: Optional[Dict[str, Any]] = None) -> None:
+        self.overall_status = status
+        self.end_time = datetime.now()
+        self.overall_message = message
+        self.fatal_error = fatal_error
+        self.total_duration_seconds = (self.end_time - self.start_time).total_seconds()

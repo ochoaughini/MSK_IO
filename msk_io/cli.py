@@ -1,157 +1,178 @@
-from __future__ import annotations
-
 import asyncio
+import click
+import os
 import json
+import time
 import logging
-import uuid
-from logging.handlers import RotatingFileHandler
-from pathlib import Path
 from typing import Optional
+from msk_io.api import MSKIOAPI
+from msk_io.watch.directory_monitor import DirectoryMonitor
+from msk_io.utils.log_config import get_logger, setup_logging
+from msk_io.errors import MSKIOError, ConfigurationError
+from msk_io import CONFIG
 
-import typer
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse
-from prometheus_client import make_asgi_app
-from rich.console import Console
-from rich.logging import RichHandler
+logger = get_logger(__name__)
 
-from .api import PipelineResult, PipelineRunner
-from .config import PipelineSettings
-from .storage.memory_vault import MemoryVault
-
-console = Console()
-app = typer.Typer(add_completion=False, no_args_is_help=True)
-
-
-def create_logger(level: int) -> None:
-    logger = logging.getLogger()
-    logger.handlers.clear()
-    fmt = (
-        '{"time":"%(asctime)s","level":"%(levelname)s",'
-        '"correlation":"%(correlation)s","msg":"%(message)s"}'
-    )
-    correlation = str(uuid.uuid4())[:8]
-
-    class CorrelationFilter(logging.Filter):
-        def filter(self, record: logging.LogRecord) -> bool:
-            record.correlation = correlation
-            return True
-
-    rich_handler = RichHandler(rich_tracebacks=True)
-    file_handler = RotatingFileHandler(
-        "logs/app.log", maxBytes=5_000_000, backupCount=2
-    )
-    for h in (rich_handler, file_handler):
-        h.setFormatter(logging.Formatter(fmt))
-        h.addFilter(CorrelationFilter())
-        logger.addHandler(h)
-    logger.setLevel(level)
-
-
-def _load_settings(path: Optional[Path]) -> PipelineSettings:
-    if path and path.exists():
-        return PipelineSettings.model_validate_json(path.read_text())
-    return PipelineSettings()
-
-
-@app.callback(invoke_without_command=True)
-def main(
-    ctx: typer.Context,
-    config: Optional[str] = typer.Option(
-        None,
-        "--config",
-        "-c",
-        help="Config file",
-    ),
-    pdf: Optional[str] = typer.Option(
-        None,
-        "--pdf",
-        help="PDF to ingest",
-    ),
-    data_path: Optional[str] = typer.Option(None, "--data-path"),
-    vector_db_url: Optional[str] = typer.Option(
-        None,
-        "--vector-db-url",
-    ),
-    ocr_enabled: bool = typer.Option(False, "--ocr-enabled", is_flag=True),
-    log_level: str = typer.Option("INFO", "--log-level"),
-    dry_run: bool = typer.Option(False, "--dry-run"),
-) -> None:
-    settings = _load_settings(Path(config) if config else None)
-    overrides = {}
-    if pdf is not None:
-        overrides["pdf_path"] = Path(pdf)
-    if data_path is not None:
-        overrides["data_path"] = Path(data_path)
-    if vector_db_url is not None:
-        overrides["vector_db_url"] = vector_db_url
-    if ocr_enabled is not None:
-        overrides["ocr_enabled"] = ocr_enabled
-    if log_level:
-        overrides["log_level"] = log_level
-    if overrides:
-        settings = settings.model_copy(update=overrides)
-    ctx.obj = settings
-    level = getattr(logging, settings.log_level.upper(), logging.INFO)
-    create_logger(level)
-    if dry_run:
-        console.print_json(data=json.loads(settings.model_dump_json()))
-        raise typer.Exit()
-
-
-@app.command()
-def run(ctx: typer.Context) -> None:
-    settings: PipelineSettings = ctx.obj
-    vault = MemoryVault(settings.vault.path)
-    result = PipelineRunner().run(settings, vault)
-    console.print_json(data=result.__dict__)
-
-
-@app.command()
-def serve(ctx: typer.Context, host: str = "0.0.0.0", port: int = 8000) -> None:
-    settings: PipelineSettings = ctx.obj
-    runner = PipelineRunner()
-    api_app = FastAPI()
-
-    @api_app.post("/rpc")
-    async def rpc(payload: dict) -> JSONResponse:  # type: ignore[valid-type]
-        if payload.get("method") == "run":
-            res: PipelineResult = await runner.run_async(
-                settings, MemoryVault(settings.vault.path)
-            )
-            return JSONResponse(res.__dict__)
-        return JSONResponse({"error": "unknown method"}, status_code=400)
-
-    api_app.mount("/metrics", make_asgi_app())
-
-    import uvicorn
-
-    uvicorn.run(api_app, host=host, port=port, log_level="info")
-
-
-@app.command("serve-metrics")
-def serve_metrics(host: str = "0.0.0.0", port: int = 8000) -> None:
-    import uvicorn
-
-    uvicorn.run(make_asgi_app(), host=host, port=port, log_level="info")
-
-
-@app.command()
-def monitor(ctx: typer.Context) -> None:
-    """Start monitoring the desktop MSK folder for new files."""
-    from .watch.directory_monitor import MSKFolderMonitor
-
-    settings: PipelineSettings = ctx.obj
-    create_logger(getattr(logging, settings.log_level.upper(), logging.INFO))
-    monitor = MSKFolderMonitor(vault_path=settings.vault.path)
-    monitor.start()
+@click.group()
+@click.option('--config-file', type=click.Path(exists=True, dir_okay=False), help='Path to a custom .env configuration file.')
+@click.option('--log-level', type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'], case_sensitive=False), help='Set the logging level for this run.')
+@click.pass_context
+def cli(ctx, config_file, log_level):
     try:
-        asyncio.get_event_loop().run_forever()
-    except KeyboardInterrupt:  # pragma: no cover - manual stop
-        pass
+        if config_file:
+            os.environ["MSKIO_APP_ENV_FILE"] = config_file
+        from msk_io.config import load_config
+        ctx.obj = {}
+        ctx.obj['CONFIG'] = load_config()
+        if log_level:
+            ctx.obj['CONFIG'].app.log_level = log_level.upper()
+            setup_logging(level=getattr(logging, log_level.upper()), log_file=ctx.obj['CONFIG'].app.log_file_path)
+            logger.info(f"Log level overridden to: {log_level.upper()}")
+        else:
+            setup_logging(level=getattr(logging, ctx.obj['CONFIG'].app.log_level.upper()), log_file=ctx.obj['CONFIG'].app.log_file_path)
+        logger.info("CLI initialized with configuration.")
+        ctx.obj['API'] = MSKIOAPI()
+    except MSKIOError as e:
+        logger.critical(f"Failed to initialize CLI due to configuration error: {e}")
+        click.echo(f"Error: {e}")
+        ctx.exit(1)
+    except Exception as e:
+        logger.critical(f"An unexpected error occurred during CLI initialization: {e}", exc_info=True)
+        click.echo(f"An unexpected error occurred: {e}")
+        ctx.exit(1)
+
+@cli.command()
+@click.argument('input_file', type=click.Path(exists=True, dir_okay=False))
+@click.option('--patient-id', '-p', help='Optional patient ID to associate with the data.')
+@click.pass_context
+def process(ctx, input_file, patient_id):
+    api = ctx.obj['API']
+    logger.info(f"Attempting to process file: {input_file} (Patient ID: {patient_id or 'N/A'})")
+    try:
+        pipeline_status = asyncio.run(api.process_medical_data(input_file, patient_id))
+        click.echo("\n--- Pipeline Summary ---")
+        click.echo(f"Pipeline ID: {pipeline_status.pipeline_id}")
+        click.echo(f"Status: {pipeline_status.overall_status}")
+        click.echo(f"Message: {pipeline_status.overall_message}")
+        if pipeline_status.final_report_path:
+            click.echo(f"Final Report Path: {pipeline_status.final_report_path}")
+            report = asyncio.run(api.get_diagnostic_report(pipeline_status.final_report_path))
+            if report:
+                click.echo("\n--- Report Conclusion ---")
+                click.echo(f"Overall Conclusion: {report.overall_conclusion}")
+                click.echo(f"Number of Findings: {len(report.diagnostic_findings)}")
+        else:
+            click.echo("No final report generated (or path not available).")
+        if pipeline_status.overall_status in ["FAILED", "COMPLETED_WITH_ERRORS"]:
+            if pipeline_status.fatal_error:
+                logger.error(f"Fatal error details: {json.dumps(pipeline_status.fatal_error, indent=2)}")
+                click.echo("\n--- Fatal Error Details ---")
+                click.echo(json.dumps(pipeline_status.fatal_error, indent=2))
+            ctx.exit(1)
+        else:
+            ctx.exit(0)
+    except MSKIOError as e:
+        logger.error(f"Pipeline processing failed: {e}")
+        click.echo(f"Error: Pipeline processing failed: {e}")
+        ctx.exit(1)
+    except Exception as e:
+        logger.critical(f"An unexpected error occurred during processing: {e}", exc_info=True)
+        click.echo(f"An unexpected error occurred: {e}")
+        ctx.exit(1)
+
+@cli.command()
+@click.option('--interval', '-i', type=int, default=5, help='Polling interval in seconds.')
+@click.pass_context
+def monitor(ctx, interval):
+    config = ctx.obj['CONFIG']
+    api = ctx.obj['API']
+    watch_dir = config.app.watch_directory
+    if not watch_dir:
+        click.echo("Error: Watch directory is not configured. Please set MSKIO_APP_WATCH_DIRECTORY.")
+        logger.error("Watch directory not configured for monitor command.")
+        ctx.exit(1)
+    click.echo(f"Monitoring directory: {watch_dir} for new files every {interval} seconds...")
+    click.echo("Press Ctrl+C to stop monitoring.")
+    logger.info(f"Starting directory monitor on {watch_dir} with interval {interval}s.")
+    @handle_errors
+    def process_new_file_callback(file_path: str):
+        logger.info(f"Callback triggered for new file: {file_path}. Initiating pipeline processing.")
+        click.echo(f"\n[Detected] New file: {file_path}. Starting pipeline...")
+        try:
+            pipeline_status = asyncio.run(api.process_medical_data(file_path))
+            click.echo(f"Pipeline for {os.path.basename(file_path)} completed with status: {pipeline_status.overall_status}")
+            if pipeline_status.final_report_path:
+                click.echo(f"Report: {pipeline_status.final_report_path}")
+            if pipeline_status.overall_status in ["FAILED", "COMPLETED_WITH_ERRORS"]:
+                click.echo(f"Details: {pipeline_status.overall_message}")
+                if pipeline_status.fatal_error:
+                    click.echo(f"Error: {json.dumps(pipeline_status.fatal_error, indent=2)}")
+        except Exception as e:
+            logger.error(f"Error during automated processing of {file_path}: {e}", exc_info=True)
+            click.echo(f"Error processing {file_path}: {e}")
+    monitor_instance = DirectoryMonitor(config, process_new_file_callback)
+    try:
+        monitor_instance.start_monitoring()
+        while True:
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        click.echo("\nStopping monitoring.")
+        logger.info("Directory monitor interrupted by user.")
     finally:
-        monitor.stop()
+        monitor_instance.stop_monitoring()
+        click.echo("Monitoring stopped.")
+        logger.info("Directory monitor gracefully stopped.")
+    ctx.exit(0)
 
+@cli.command()
+@click.option('--pipeline-id', help='Optional: Specific pipeline ID to check.')
+@click.pass_context
+def status(ctx, pipeline_id):
+    api = ctx.obj['API']
+    if pipeline_id:
+        logger.info(f"Checking status for pipeline ID: {pipeline_id}")
+        try:
+            pipeline_status = asyncio.run(api.get_pipeline_status(pipeline_id))
+            if pipeline_status:
+                click.echo(f"--- Pipeline Status for ID: {pipeline_status.pipeline_id} ---")
+                click.echo(f"Overall Status: {pipeline_status.overall_status}")
+                click.echo(f"Message: {pipeline_status.overall_message}")
+                click.echo(f"Start Time: {pipeline_status.start_time}")
+                if pipeline_status.end_time:
+                    click.echo(f"End Time: {pipeline_status.end_time}")
+                    click.echo(f"Duration: {pipeline_status.total_duration_seconds:.2f} seconds")
+                for task in pipeline_status.tasks_status:
+                    click.echo(f"  - Task '{task.task_name}': {task.status}")
+                    if task.error_details:
+                        click.echo(f"    Error: {json.dumps(task.error_details)}")
+                if pipeline_status.final_report_path:
+                    click.echo(f"Final Report: {pipeline_status.final_report_path}")
+            else:
+                click.echo(f"Pipeline with ID '{pipeline_id}' not found or status not available.")
+                logger.warning(f"Status check: Pipeline ID '{pipeline_id}' not found.")
+        except MSKIOError as e:
+            logger.error(f"Failed to retrieve status for {pipeline_id}: {e}")
+            click.echo(f"Error: Failed to retrieve status: {e}")
+            ctx.exit(1)
+        except Exception as e:
+            logger.critical(f"An unexpected error occurred during status check: {e}", exc_info=True)
+            click.echo(f"An unexpected error occurred: {e}")
+            ctx.exit(1)
+    else:
+        click.echo("This command conceptually shows recent pipeline statuses.")
+        click.echo("Please provide a --pipeline-id to check a specific run.")
+        logger.info("Status command called without a specific pipeline ID.")
+        click.echo("Example: msk-io status --pipeline-id <UUID>")
+    ctx.exit(0)
 
-if __name__ == "__main__":  # pragma: no cover
-    app()
+@cli.command()
+@click.pass_context
+def config(ctx):
+    logger.info("Displaying current configuration.")
+    config_obj = ctx.obj['CONFIG']
+    config_dict = config_obj.model_dump(mode='json', exclude_sensitive=True)
+    click.echo(json.dumps(config_dict, indent=2))
+    ctx.exit(0)
+
+if __name__ == '__main__':
+    cli(obj={})
