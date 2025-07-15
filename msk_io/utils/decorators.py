@@ -38,16 +38,32 @@ def handle_errors(func: Callable[_P, _R]) -> Callable[_P, _R]:
     return wrapper
 
 def requires_config(setting_key: str) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]:
+    """Decorator to ensure a (possibly nested) config value exists before call."""
+
     def decorator(func: Callable[_P, _R]) -> Callable[_P, _R]:
         @functools.wraps(func)
         def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
             from msk_io import CONFIG
+
             if CONFIG is None:
                 raise ConfigurationError("Application configuration not loaded.")
 
-            config_value = getattr(CONFIG, setting_key, None)
-            if config_value is None:
-                raise ConfigurationError(f"Required configuration setting '{setting_key}' is missing or None.")
+            parts = setting_key.split('.')
+            current_config = CONFIG
+            for part in parts:
+                if not hasattr(current_config, part):
+                    raise ConfigurationError(
+                        f"Required configuration setting '{setting_key}' is missing or None."
+                    )
+                current_config = getattr(current_config, part)
+
+            if current_config is None:
+                raise ConfigurationError(
+                    f"Required configuration setting '{setting_key}' is missing or None."
+                )
+
             return func(*args, **kwargs)
+
         return wrapper
+
     return decorator

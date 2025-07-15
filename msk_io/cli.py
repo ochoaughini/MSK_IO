@@ -99,7 +99,10 @@ def monitor(ctx, interval):
         logger.info(f"Callback triggered for new file: {file_path}. Initiating pipeline processing.")
         click.echo(f"\n[Detected] New file: {file_path}. Starting pipeline...")
         try:
-            pipeline_status = asyncio.run(api.process_medical_data(file_path))
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            pipeline_status = loop.run_until_complete(api.process_medical_data(file_path))
+            loop.close()
             click.echo(f"Pipeline for {os.path.basename(file_path)} completed with status: {pipeline_status.overall_status}")
             if pipeline_status.final_report_path:
                 click.echo(f"Report: {pipeline_status.final_report_path}")
