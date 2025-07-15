@@ -1,49 +1,50 @@
-from __future__ import annotations
+import os
+from datetime import datetime
+from typing import Optional
+from msk_io.schema.retrieval_info import RetrievedDataInfo, DataSource
+from msk_io.errors import RetrievalError, ExternalServiceError
+from msk_io.utils.log_config import get_logger
+from msk_io.utils.decorators import handle_errors, log_method_entry_exit
 
-"""Capture rendered frames from an OHIF viewer canvas."""
+logger = get_logger(__name__)
 
-import asyncio
-import base64
-import io
-from typing import Optional, List
+class OHIFCanvasExtractor:
+    def __init__(self, config):
+        self.config = config
+        self.headless = config.retrieval.ohif_extractor_headless
+        self.download_dir = config.retrieval.data_download_dir
+        os.makedirs(self.download_dir, exist_ok=True)
+        logger.info(f"OHIF Extractor initialized. Headless: {self.headless}, Download Dir: {self.download_dir}")
+        self._browser = None
 
-import numpy as np
-from PIL import Image
-
-from .external_dicom_source import ExternalDICOMSource
-
-
-class OHIFCanvasExtractor(ExternalDICOMSource):
-    """Headless browser canvas scraper using ``pyppeteer``."""
-
-    def __init__(self, url: str, token: Optional[str] = None, slices: int = 1) -> None:
-        self.url = url
-        self.token = token
-        self.slices = slices
-
-    async def _capture_slice(self, page) -> np.ndarray:
-        elem = await page.querySelector("canvas")
-        data_url = await page.evaluate("(e) => e.toDataURL()", elem)
-        _, b64 = data_url.split(",", 1)
-        buf = base64.b64decode(b64)
-        img = Image.open(io.BytesIO(buf))
-        return np.array(img)
-
-    async def retrieve(self) -> np.ndarray:
-        from pyppeteer import launch  # type: ignore
-
-        browser = await launch(headless=True, args=["--no-sandbox"])
-        page = await browser.newPage()
-        headers = {"Authorization": f"Bearer {self.token}"} if self.token else None
-        if headers:
-            await page.setExtraHTTPHeaders(headers)
-        await page.goto(self.url)
-        await page.waitForSelector("canvas")
-        frames: List[np.ndarray] = []
-        for _ in range(self.slices):
-            arr = await self._capture_slice(page)
-            frames.append(arr)
-            await page.keyboard.press("ArrowDown")
-            await asyncio.sleep(0.1)
-        await browser.close()
-        return np.stack(frames)
+    @handle_errors
+    @log_method_entry_exit
+    async def extract_images_from_ohif(self, ohif_url: str, study_id: str, series_id: Optional[str] = None) -> RetrievedDataInfo:
+        logger.warning("OHIFCanvasExtractor.extract_images_from_ohif is a conceptual stub. Requires pyppeteer/playwright.")
+        start_time = datetime.now()
+        try:
+            screenshot_path = os.path.join(self.download_dir, f"ohif_screenshot_{study_id}.png")
+            with open(screenshot_path, 'w') as f:
+                f.write("DUMMY IMAGE DATA")
+            logger.info(f"Simulated OHIF image extraction to: {screenshot_path}")
+        except ImportError:
+            raise ExternalServiceError("Pyppeteer/Playwright dependency not found. Cannot perform OHIF extraction.")
+        except Exception as e:
+            raise ExternalServiceError(f"Failed to interact with OHIF viewer: {e}") from e
+        end_time = datetime.now()
+        data_source = DataSource(
+            source_id="ohif-viewer",
+            source_type="OHIF_Viewer",
+            endpoint_url=ohif_url,
+            access_method="Browser Automation",
+            last_accessed=end_time
+        )
+        return RetrievedDataInfo(
+            data_source=data_source,
+            original_query=f"OHIF Study:{study_id}",
+            retrieved_file_paths=[screenshot_path],
+            total_files_retrieved=1,
+            total_size_bytes=os.path.getsize(screenshot_path),
+            retrieval_start_time=start_time,
+            retrieval_end_time=end_time
+        )

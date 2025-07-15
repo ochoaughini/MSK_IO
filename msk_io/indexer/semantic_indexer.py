@@ -1,73 +1,67 @@
-from __future__ import annotations
-
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Dict, List
-
+import os
 import numpy as np
-try:
-    import faiss
-except Exception:  # pragma: no cover - optional
-    faiss = None
+from typing import List, Dict, Any, Optional
+from msk_io.errors import IndexingError, ConfigurationError, ExternalServiceError
+from msk_io.utils.log_config import get_logger
+from msk_io.utils.decorators import handle_errors, log_method_entry_exit, requires_config
 
-
-@dataclass
-class IndexedItem:
-    text: str
-    embedding: List[float]
-
-
-def _embed(text: str) -> np.ndarray:
-    rng = np.random.default_rng(abs(hash(text)) % (2**32))
-    return rng.random(16).astype("float32")
-
+logger = get_logger(__name__)
 
 class SemanticIndexer:
-    """FAISS-backed semantic indexer with random embeddings."""
+    def __init__(self, config):
+        self.config = config
+        self.embedding_model_name = config.indexer.embedding_model_name
+        self.vector_db_path = config.indexer.vector_db_path
+        self._model = None
+        db_dir = os.path.dirname(self.vector_db_path) or './'
+        os.makedirs(db_dir, exist_ok=True)
+        logger.info(f"Semantic Indexer initialized. Model: {self.embedding_model_name}, DB Path: {self.vector_db_path}")
 
-    def __init__(self, path: Path) -> None:
-        self.path = path
-        if faiss:
-            self.index = faiss.IndexFlatL2(16)
-        else:  # pragma: no cover - fallback
-            self.index = None
-        self.embeddings: List[np.ndarray] = []
-        self.items: List[str] = []
+    @handle_errors
+    @log_method_entry_exit
+    @requires_config("indexer.embedding_model_name")
+    def _load_embedding_model(self) -> Any:
+        logger.warning(f"SemanticIndexer._load_embedding_model is a conceptual stub. Simulating model loading for {self.embedding_model_name}.")
+        try:
+            self._model = "DUMMY_EMBEDDING_MODEL"
+            logger.info(f"Simulated embedding model '{self.embedding_model_name}' loaded.")
+            return self._model
+        except ImportError as e:
+            raise ExternalServiceError(f"Missing 'sentence-transformers' or other embedding library dependency: {e}") from e
+        except Exception as e:
+            raise ExternalServiceError(f"Failed to load embedding model '{self.embedding_model_name}': {e}") from e
 
-    def index_items(self, items: List[str]) -> None:
-        embeddings = np.vstack([_embed(t) for t in items])
-        if self.index:
-            self.index.add(embeddings)
-        else:
-            self.embeddings.extend(list(embeddings))
-        self.items.extend(items)
+    @handle_errors
+    @log_method_entry_exit
+    def _embed_text(self, text: str) -> List[float]:
+        if self._model is None:
+            self._load_embedding_model()
+        logger.warning("SemanticIndexer._embed_text is a conceptual stub. Returning random embedding.")
+        return np.random.rand(384).tolist()
 
-    def add_items(self, items: List[str]) -> None:
-        self.index_items(items)
+    @handle_errors
+    @log_method_entry_exit
+    def index_document(self, doc_id: str, text_content: str, metadata: Optional[Dict[str, Any]] = None) -> None:
+        logger.warning(f"SemanticIndexer.index_document is a conceptual stub. Indexing document '{doc_id}'.")
+        embedding = self._embed_text(text_content)
+        try:
+            with open(f"{self.vector_db_path}_{doc_id}.txt", "w") as f:
+                f.write(f"Doc ID: {doc_id}\n")
+                f.write(f"Text: {text_content[:100]}...\n")
+                f.write(f"Embedding snippet: {embedding[:5]}...\n")
+                f.write(f"Metadata: {metadata}\n")
+            logger.info(f"Simulated indexing of document '{doc_id}' complete.")
+        except Exception as e:
+            raise IndexingError(f"Failed to simulate indexing document '{doc_id}': {e}") from e
 
-    def query(self, text: str) -> str:
-        if not self.items:
-            raise ValueError("Empty index")
-        emb = _embed(text).reshape(1, -1)
-        if self.index:
-            _, idx = self.index.search(emb, 1)
-            return self.items[int(idx[0][0])]
-        else:
-            dists = [float(np.linalg.norm(e - emb)) for e in self.embeddings]
-            i = int(np.argmin(dists))
-            return self.items[i]
-
-    def query_batch(self, texts: List[str]) -> List[str]:
-        if not self.items:
-            raise ValueError("Empty index")
-        embs = np.vstack([_embed(t) for t in texts])
-        if self.index:
-            _, idx = self.index.search(embs, 1)
-            return [self.items[int(i[0])] for i in idx]
-        else:
-            results = []
-            for emb in embs:
-                dists = [float(np.linalg.norm(e - emb)) for e in self.embeddings]
-                i = int(np.argmin(dists))
-                results.append(self.items[i])
-            return results
+    @handle_errors
+    @log_method_entry_exit
+    def query_semantic_index(self, query_text: str, top_k: int = 5) -> List[Dict[str, Any]]:
+        logger.warning(f"SemanticIndexer.query_semantic_index is a conceptual stub. Querying for '{query_text}'.")
+        query_embedding = self._embed_text(query_text)
+        simulated_results = [
+            {"doc_id": "sim_doc_1", "score": 0.95, "text": "This is a relevant document about medical imaging.", "metadata": {"source": "clinical_notes"}},
+            {"doc_id": "sim_doc_2", "score": 0.88, "text": "Another document on patient diagnostics.", "metadata": {"source": "research_paper"}},
+        ]
+        logger.info(f"Simulated semantic query for '{query_text}' returned {len(simulated_results)} results.")
+        return simulated_results[:top_k]

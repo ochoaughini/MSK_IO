@@ -1,157 +1,106 @@
-from __future__ import annotations
-
-"""Asynchronous directory monitor for the MSK folder.
-
-This module provides a lightweight observer that watches the ``MSK``
-directory on the user's desktop. It processes incoming DICOM and PDF
-files using the existing :mod:`msk_io` pipeline components. Generated
-Python scripts placed under ``generated_scripts`` are executed in a
-separate subprocess with a strict timeout.
-
-This implementation is a demonstration only and does not constitute
-medical advice. Always consult a licensed professional before using the
-output of this software for diagnostic purposes.
-"""
-
-import asyncio
-import logging
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Optional, Set
-
-from watchdog.events import FileCreatedEvent, FileSystemEventHandler
+import os
+import time
+import queue
+import threading
+from typing import List, Callable, Any, Optional
 from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler, FileModifiedEvent, FileCreatedEvent
+from msk_io.errors import ProcessingError, ConfigurationError
+from msk_io.utils.log_config import get_logger
+from msk_io.utils.decorators import handle_errors
 
-from ..api import PipelineRunner
-from ..config import PipelineSettings
-from ..pdf.pdf_ingestor import MSKPDFIngestor
-from ..storage.memory_vault import MemoryVault
+logger = get_logger(__name__)
 
-logger = logging.getLogger(__name__)
+class FileEventHandler(FileSystemEventHandler):
+    def __init__(self, processing_queue: queue.Queue, supported_extensions: List[str]):
+        self.processing_queue = processing_queue
+        self.supported_extensions = [ext.lower() for ext in supported_extensions]
+        logger.info(f"File event handler initialized. Supported extensions: {self.supported_extensions}")
 
+    def _is_supported_file(self, event_path: str) -> bool:
+        return any(event_path.lower().endswith(ext) for ext in self.supported_extensions)
 
-@dataclass
-class MSKFolderMonitor:
-    """Watch the ``MSK`` folder and trigger pipeline actions."""
+    def on_created(self, event: FileCreatedEvent) -> None:
+        if not event.is_directory and self._is_supported_file(event.src_path):
+            logger.info(f"Detected new file: {event.src_path}")
+            self.processing_queue.put(event.src_path)
+        elif event.is_directory:
+            logger.debug(f"Detected new directory: {event.src_path}")
 
-    base: Path = field(
-        default_factory=lambda: Path.home() / "Desktop" / "MSK",
-    )
-    vault_path: Path = field(default_factory=lambda: Path("vault.db"))
-    observer: Optional[Observer] = field(init=False, default=None)
-    _processing: Set[Path] = field(init=False, default_factory=set)
+    def on_modified(self, event: FileModifiedEvent) -> None:
+        if not event.is_directory and self._is_supported_file(event.src_path) and not event.src_path.endswith(('.tmp', '~')):
+            logger.debug(f"Detected modified file (for potential reprocessing/completion): {event.src_path}")
+            pass
 
-    def start(self) -> None:
-        """Start monitoring the folder."""
-        self.base.mkdir(parents=True, exist_ok=True)
-        for sub in ("dicom_images", "pdf_reference", "generated_scripts"):
-            (self.base / sub).mkdir(exist_ok=True)
-
+class DirectoryMonitor:
+    def __init__(self, config, file_processor_callback: Callable[[str], Any], supported_extensions: List[str] = ['.dcm', '.nii', '.nii.gz', '.png', '.jpg', '.pdf', '.txt']):
+        self.config = config
+        self.watch_directory = config.app.watch_directory
+        self.file_processor_callback = file_processor_callback
+        self.supported_extensions = supported_extensions
+        self.processing_queue = queue.Queue()
         self.observer = Observer()
-        self.observer.schedule(
-            _DicomHandler(self),
-            str(self.base / "dicom_images"),
-            recursive=True,
-        )
-        self.observer.schedule(
-            _PDFHandler(self),
-            str(self.base / "pdf_reference"),
-            recursive=True,
-        )
-        self.observer.schedule(
-            _ScriptHandler(self),
-            str(self.base / "generated_scripts"),
-            recursive=True,
-        )
-        self.observer.start()
-        logger.info("Started monitoring %s", self.base)
-
-    def stop(self) -> None:
-        """Stop monitoring."""
-        if self.observer:
-            self.observer.stop()
-            self.observer.join()
-        logger.info("Stopped monitoring %s", self.base)
-
-    async def process_dicom_dir(self, directory: Path) -> None:
-        """Run the pipeline on a directory of DICOM files."""
-        if directory in self._processing:
-            return
-        self._processing.add(directory)
-        try:
-            settings = PipelineSettings(data_path=directory)
-            vault = MemoryVault(self.vault_path)
-            await PipelineRunner().run_async(settings, vault)
-        except Exception as exc:  # pragma: no cover - best effort logging
-            logger.error("Processing failed for %s: %s", directory, exc)
-        finally:
-            self._processing.discard(directory)
-
-    async def process_pdf(self, path: Path) -> None:
-        """Ingest a PDF file for reference."""
-        try:
-            texts = await asyncio.to_thread(MSKPDFIngestor().ingest, path)
-            logger.info("Ingested %d pages from %s", len(texts), path)
-        except Exception as exc:  # pragma: no cover - best effort logging
-            logger.error("PDF ingestion failed for %s: %s", path, exc)
-
-    async def run_script(self, path: Path) -> None:
-        """Execute a generated script in a sandboxed subprocess."""
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "python",
-                str(path),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
+        self.worker_thread: Optional[threading.Thread] = None
+        self.running = False
+        logger.info(f"Directory Monitor initialized for: {self.watch_directory}")
+        logger.info(f"Supported extensions: {self.supported_extensions}")
+        if not os.path.isdir(self.watch_directory):
             try:
-                out, err = await asyncio.wait_for(
-                    proc.communicate(),
-                    timeout=60,
-                )
-                logger.info("Script %s exited %s", path, proc.returncode)
-                if out:
-                    logger.debug(out.decode())
-                if err:
-                    logger.warning(err.decode())
-            except asyncio.TimeoutError:
-                proc.kill()
-                logger.warning("Script %s timed out", path)
-        except Exception as exc:  # pragma: no cover - best effort logging
-            logger.error("Failed to run script %s: %s", path, exc)
+                os.makedirs(self.watch_directory, exist_ok=True)
+                logger.warning(f"Watch directory '{self.watch_directory}' did not exist and was created.")
+            except OSError as e:
+                raise ConfigurationError(f"Watch directory '{self.watch_directory}' does not exist and cannot be created: {e}") from e
 
-
-class _DicomHandler(FileSystemEventHandler):
-    def __init__(self, monitor: MSKFolderMonitor) -> None:
-        self.monitor = monitor
-
-    def on_created(self, event: FileCreatedEvent) -> None:
-        if event.is_directory:
+    @handle_errors
+    def start_monitoring(self) -> None:
+        if self.running:
+            logger.warning("Directory monitor is already running.")
             return
-        path = Path(event.src_path)
-        if path.suffix.lower() == ".dcm":
-            asyncio.create_task(self.monitor.process_dicom_dir(path.parent))
+        event_handler = FileEventHandler(self.processing_queue, self.supported_extensions)
+        self.observer.schedule(event_handler, self.watch_directory, recursive=True)
+        self.observer.start()
+        self.running = True
+        logger.info(f"Started monitoring directory: {self.watch_directory}")
+        self.worker_thread = threading.Thread(target=self._process_files_from_queue, daemon=True)
+        self.worker_thread.start()
+        logger.info("Started file processing worker thread.")
 
-
-class _PDFHandler(FileSystemEventHandler):
-    def __init__(self, monitor: MSKFolderMonitor) -> None:
-        self.monitor = monitor
-
-    def on_created(self, event: FileCreatedEvent) -> None:
-        if event.is_directory:
+    @handle_errors
+    def stop_monitoring(self) -> None:
+        if not self.running:
+            logger.warning("Directory monitor is not running.")
             return
-        path = Path(event.src_path)
-        if path.suffix.lower() == ".pdf":
-            asyncio.create_task(self.monitor.process_pdf(path))
+        self.observer.stop()
+        self.observer.join()
+        self.running = False
+        if self.worker_thread:
+            self.processing_queue.put(None)
+            self.worker_thread.join(timeout=5)
+            if self.worker_thread.is_alive():
+                logger.warning("File processing worker thread did not terminate cleanly.")
+        logger.info(f"Stopped monitoring directory: {self.watch_directory}")
 
+    @handle_errors
+    def _process_files_from_queue(self) -> None:
+        logger.info("File processing worker thread started.")
+        while True:
+            file_path = self.processing_queue.get()
+            if file_path is None:
+                logger.info("File processing worker received stop signal.")
+                break
+            logger.info(f"Processing new file from queue: {file_path}")
+            try:
+                time.sleep(1)
+                self.file_processor_callback(file_path)
+                logger.info(f"Successfully processed file: {file_path}")
+            except Exception as e:
+                logger.error(f"Error processing file {file_path}: {e}", exc_info=True)
+            finally:
+                self.processing_queue.task_done()
 
-class _ScriptHandler(FileSystemEventHandler):
-    def __init__(self, monitor: MSKFolderMonitor) -> None:
-        self.monitor = monitor
+    def __enter__(self):
+        self.start_monitoring()
+        return self
 
-    def on_created(self, event: FileCreatedEvent) -> None:
-        if event.is_directory:
-            return
-        path = Path(event.src_path)
-        if path.suffix.lower() == ".py":
-            asyncio.create_task(self.monitor.run_script(path))
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.stop_monitoring()
