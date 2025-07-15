@@ -146,9 +146,34 @@ class AppConfig(BaseSettings):
                 ) from e
 
 
-def load_config() -> AppConfig:
+def load_config(env_file: str | None = None) -> AppConfig:
+    """Load and return the application configuration.
+
+    Parameters
+    ----------
+    env_file : str | None, optional
+        Path to a ``.env`` file. If ``None``, a file named ``.env`` in the
+        current working directory is used. The ``MSKIO_APP_ENV_FILE`` environment
+        variable takes precedence if set.
+    """
+
+    if env_file is None:
+        env_file = os.environ.get("MSKIO_APP_ENV_FILE", os.path.join(os.getcwd(), ".env"))
+
+    if os.path.exists(env_file):
+        try:
+            with open(env_file) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    key, value = line.split("=", 1)
+                    os.environ.setdefault(key, value)
+        except OSError as e:
+            logger.warning(f"Failed to read env file {env_file}: {e}")
+
     try:
-        config = AppConfig()
+        config = AppConfig(_env_file=None)
         return config
     except ValidationError as e:
         logger.error(f"Configuration validation error: {e}")
